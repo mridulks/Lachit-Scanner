@@ -22,7 +22,7 @@ void main() {
     test('centred path has evenly spaced vertical controls', () {
       final path = GutterPath.centered(width: 200, height: 120);
 
-      expect(path.points, hasLength(7));
+      expect(path.points, hasLength(3));
       expect(path.points.every((point) => point.x == 100), isTrue);
       expect(path.points.first.y, 0);
       expect(path.points.last.y, 120);

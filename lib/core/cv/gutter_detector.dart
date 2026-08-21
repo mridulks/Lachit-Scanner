@@ -22,7 +22,7 @@ class GutterDetection {
 /// programming. It is deliberately an initial estimate, not a page dewarper.
 class GutterDetector {
   static const int _maxAnalysisWidth = 480;
-  static const int _controlPointCount = 7;
+  static const int _controlPointCount = 3;
 
   static GutterDetection? detect(Uint8List imageBytes) {
     final source = cv.imdecode(imageBytes, cv.IMREAD_COLOR);

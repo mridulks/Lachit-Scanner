@@ -15,7 +15,9 @@ import '../../models/page.dart' as model;
 import '../document_editor/document_editor_screen.dart';
 
 /// Reviews the automatic curved-gutter estimate and remains the manual
-/// fallback when the image has no dependable spine evidence.
+/// fallback when the image has no dependable spine evidence. BookProcessor
+/// normalises portrait captures first, so this editor always follows a
+/// top-to-bottom spine and can use only three useful control points.
 class GutterAdjustScreen extends ConsumerStatefulWidget {
   final WarpResult spread;
   final model.ColorMode colorMode;
@@ -31,6 +33,7 @@ class GutterAdjustScreen extends ConsumerStatefulWidget {
 }
 
 class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
+  late WarpResult _spread;
   ui.Image? _decoded;
   GutterPath? _gutter;
   GutterDetection? _detection;
@@ -42,15 +45,16 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
   @override
   void initState() {
     super.initState();
+    _spread = widget.spread;
     _load();
   }
 
   Future<void> _load() async {
-    final codec = await ui.instantiateImageCodec(widget.spread.jpegBytes);
+    final codec = await ui.instantiateImageCodec(_spread.jpegBytes);
     final frame = await codec.getNextFrame();
     GutterDetection? detection;
     try {
-      detection = GutterDetector.detect(widget.spread.jpegBytes);
+      detection = GutterDetector.detect(_spread.jpegBytes);
     } catch (_) {
       // A manual centred path is always available if OpenCV cannot analyse a
       // particular device/image format.
@@ -125,12 +129,18 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
     );
   }
 
+  Future<void> _flipPages() async {
+    setState(() => _decoded = null);
+    _spread = ImageWarper.rotate180(_spread);
+    await _load();
+  }
+
   Future<void> _confirm() async {
     if (_gutter == null || _saving) return;
     setState(() => _saving = true);
     try {
       final split = BookProcessor.splitAndWarpPath(
-        spread: widget.spread,
+        spread: _spread,
         gutter: _gutter!,
         colorMode: widget.colorMode,
       );
@@ -215,14 +225,19 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
             children: [
               Text(
                 automatic
-                    ? 'Automatic gutter detected. Drag any point to fine-tune it.'
-                    : 'Could not confidently detect the gutter. Drag the points onto the spine.',
+                    ? 'Automatic gutter detected. Drag any of the three points to fine-tune it.'
+                    : 'Could not confidently detect the gutter. Drag the three points onto the spine.',
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
               TextButton(
                 onPressed: _resetToCenter,
                 child: const Text('Reset to center'),
+              ),
+              TextButton.icon(
+                onPressed: _saving ? null : _flipPages,
+                icon: const Icon(Icons.flip),
+                label: const Text('Text upside-down? Flip pages'),
               ),
               const SizedBox(height: 4),
               Row(

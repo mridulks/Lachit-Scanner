@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cv/book_processor.dart';
 import '../../core/cv/book_detector.dart';
+import '../../core/cv/book_geometry.dart';
 import '../../core/cv/edge_detector.dart';
 import '../../core/cv/warp.dart';
 import '../../core/providers.dart';
@@ -74,6 +75,11 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.scanKind == ScanKind.book) {
+      // Printed book pages retain far more detail in grayscale. B&W remains
+      // available when a deliberately high-contrast scan is wanted.
+      _colorMode = model.ColorMode.grayscale;
+    }
     _load();
   }
 
@@ -102,8 +108,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     setState(() {
       _bytes = bytes;
       _decoded = frame.image;
-      _corners =
-          quad?.corners ??
+      _corners = quad?.corners ??
           EdgeDetector.fallbackQuad(
             frame.image.width.toDouble(),
             frame.image.height.toDouble(),
@@ -145,6 +150,31 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     ];
   }
 
+  List<Point<double>> _centerGutterGuide() {
+    final c = _corners!;
+    final (width, height) = ImageWarper.outputSizeForQuad(c);
+    // This preview is drawn in the original camera image, before
+    // BookProcessor normalises a portrait spread into landscape. Its guide
+    // must therefore follow the source orientation: portrait photo => the
+    // two pages are stacked and the gutter is horizontal.
+    if (height > width) {
+      final left = Point((c[0].x + c[3].x) / 2, (c[0].y + c[3].y) / 2);
+      final right = Point((c[1].x + c[2].x) / 2, (c[1].y + c[2].y) / 2);
+      return [
+        left,
+        Point((left.x + right.x) / 2, (left.y + right.y) / 2),
+        right,
+      ];
+    }
+    final top = Point((c[0].x + c[1].x) / 2, (c[0].y + c[1].y) / 2);
+    final bottom = Point((c[3].x + c[2].x) / 2, (c[3].y + c[2].y) / 2);
+    return [
+      top,
+      Point((top.x + bottom.x) / 2, (top.y + bottom.y) / 2),
+      bottom,
+    ];
+  }
+
   int? _hitTestHandle(Offset screenPos) {
     if (_corners == null) return null;
     const hitRadius = 28.0;
@@ -163,7 +193,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     return null;
   }
 
-  Future<void> _confirm() async {
+  Future<void> _confirm({bool useCenteredGutter = false}) async {
     if (_bytes == null || _corners == null || _saving) return;
     setState(() => _saving = true);
     try {
@@ -180,6 +210,46 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
           imageBytes: _bytes!,
           outerCorners: _corners!,
         );
+        if (useCenteredGutter) {
+          final split = BookProcessor.splitAndWarpPath(
+            spread: spread,
+            gutter: GutterPath.centered(
+              width: spread.width.toDouble(),
+              height: spread.height.toDouble(),
+            ),
+            colorMode: _colorMode,
+          );
+          final docDir = await storage.documentDir(doc.id);
+
+          Future<void> saveBookPage(
+            Uint8List bytes,
+            model.PageSourceMode sourceMode,
+          ) async {
+            final pageId = storage.newId();
+            final path = '${docDir.path}/$pageId.jpg';
+            await File(path).writeAsBytes(bytes);
+            await storage.addPage(
+              doc!,
+              imagePath: path,
+              sourceMode: sourceMode,
+              colorMode: _colorMode,
+            );
+          }
+
+          await saveBookPage(
+              split.left.jpegBytes, model.PageSourceMode.bookLeft);
+          await saveBookPage(
+              split.right.jpegBytes, model.PageSourceMode.bookRight);
+          ref.read(documentVersionProvider.notifier).state++;
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => DocumentEditorScreen(documentId: doc!.id),
+            ),
+            (route) => route.isFirst,
+          );
+          return;
+        }
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
@@ -244,9 +314,8 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                   onPanStart: (d) {
                     final idx = _hitTestHandle(d.localPosition) ?? -1;
                     _draggingIndex = idx;
-                    _lastDragImagePoint = idx == -1
-                        ? null
-                        : _screenToImage(d.localPosition);
+                    _lastDragImagePoint =
+                        idx == -1 ? null : _screenToImage(d.localPosition);
                   },
                   onPanUpdate: (d) {
                     if (_draggingIndex == -1) return;
@@ -279,9 +348,11 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                     painter: _QuadPainter(
                       image: _decoded!,
                       corners: _corners!.map(_imageToScreen).toList(),
-                      edgeMidpoints: _edgeMidpoints()
-                          .map(_imageToScreen)
-                          .toList(),
+                      edgeMidpoints:
+                          _edgeMidpoints().map(_imageToScreen).toList(),
+                      centerGuide: widget.scanKind == ScanKind.book
+                          ? _centerGutterGuide().map(_imageToScreen).toList()
+                          : null,
                     ),
                   ),
                 );
@@ -317,6 +388,15 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                 },
               ),
               const SizedBox(height: 12),
+              if (widget.scanKind == ScanKind.book)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'The centre guide is the default gutter. Split now, or review the gutter to fine-tune it.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               Row(
                 children: [
                   Expanded(
@@ -328,7 +408,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      onPressed: _saving ? null : _confirm,
+                      onPressed: _saving ? null : () => _confirm(),
                       child: _saving
                           ? const SizedBox(
                               width: 20,
@@ -337,13 +417,20 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                             )
                           : Text(
                               widget.scanKind == ScanKind.book
-                                  ? 'Next: mark gutter'
+                                  ? 'Review gutter'
                                   : 'Use this',
                             ),
                     ),
                   ),
                 ],
               ),
+              if (widget.scanKind == ScanKind.book)
+                TextButton.icon(
+                  onPressed:
+                      _saving ? null : () => _confirm(useCenteredGutter: true),
+                  icon: const Icon(Icons.call_split),
+                  label: const Text('Split using centre guide'),
+                ),
             ],
           ),
         ),
@@ -356,11 +443,13 @@ class _QuadPainter extends CustomPainter {
   final ui.Image image;
   final List<Offset> corners; // screen space, TL,TR,BR,BL
   final List<Offset> edgeMidpoints; // screen space, top/right/bottom/left
+  final List<Offset>? centerGuide;
 
   _QuadPainter({
     required this.image,
     required this.corners,
     required this.edgeMidpoints,
+    this.centerGuide,
   });
 
   @override
@@ -398,6 +487,26 @@ class _QuadPainter extends CustomPainter {
     final path = Path()..addPolygon(corners, true);
     canvas.drawPath(path, fillPaint);
     canvas.drawPath(path, quadPaint);
+
+    if (centerGuide != null) {
+      final guidePaint = Paint()
+        ..color = const Color(0xFF66E88A)
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke;
+      final guide = Path()
+        ..moveTo(centerGuide!.first.dx, centerGuide!.first.dy);
+      for (final point in centerGuide!.skip(1)) {
+        guide.lineTo(point.dx, point.dy);
+      }
+      canvas.drawPath(guide, guidePaint);
+      for (final point in centerGuide!) {
+        canvas.drawCircle(
+          point,
+          8,
+          Paint()..color = const Color(0xFF66E88A),
+        );
+      }
+    }
 
     // Corner handles — larger, filled white with green ring.
     final handlePaint = Paint()..color = Colors.white;

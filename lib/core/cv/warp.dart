@@ -72,6 +72,34 @@ class ImageWarper {
     }
   }
 
+  /// Rotates an intermediate Book Mode spread into its canonical landscape
+  /// orientation. PNG is retained because another warp follows this stage.
+  static WarpResult rotateCounterClockwise(WarpResult input) {
+    final source = cv.imdecode(input.jpegBytes, cv.IMREAD_COLOR);
+    cv.Mat rotated = cv.Mat.empty();
+    try {
+      rotated = cv.rotate(source, cv.ROTATE_90_COUNTERCLOCKWISE);
+      return encodePng(rotated);
+    } finally {
+      source.dispose();
+      rotated.dispose();
+    }
+  }
+
+  /// Flips a canonical book spread while keeping the gutter vertical. This
+  /// recovers from a phone held the opposite way round during capture.
+  static WarpResult rotate180(WarpResult input) {
+    final source = cv.imdecode(input.jpegBytes, cv.IMREAD_COLOR);
+    cv.Mat rotated = cv.Mat.empty();
+    try {
+      rotated = cv.rotate(source, cv.ROTATE_180);
+      return encodePng(rotated);
+    } finally {
+      source.dispose();
+      rotated.dispose();
+    }
+  }
+
   /// Core primitive: warps the quad [corners] within already-decoded [src]
   /// to a flat rectangle sized from the corners' own side lengths. Caller
   /// owns and must dispose the returned Mat (and [src]).

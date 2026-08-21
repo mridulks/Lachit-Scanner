@@ -12,7 +12,8 @@ void main() {
     throw StateError('Gutter interpolation failed.');
   }
   final centered = GutterPath.centered(width: 200, height: 120);
-  if (centered.points.length != 7 || centered.points.any((point) => point.x != 100)) {
+  if (centered.points.length != 3 ||
+      centered.points.any((point) => point.x != 100)) {
     throw StateError('Centred gutter generation failed.');
   }
   print('Book geometry checks passed.');

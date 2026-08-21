@@ -32,15 +32,15 @@ class GutterPath {
   final List<Point<double>> points;
 
   GutterPath(List<Point<double>> points)
-    : assert(points.length >= 2),
-      points = List.unmodifiable(
-        [...points]..sort((a, b) => a.y.compareTo(b.y)),
-      );
+      : assert(points.length >= 2),
+        points = List.unmodifiable(
+          [...points]..sort((a, b) => a.y.compareTo(b.y)),
+        );
 
   factory GutterPath.centered({
     required double width,
     required double height,
-    int controlPointCount = 7,
+    int controlPointCount = 3,
   }) {
     final x = width / 2;
     return GutterPath(
@@ -56,7 +56,8 @@ class GutterPath {
     required double topX,
     required double bottomX,
     required double height,
-  }) => GutterPath([Point(topX, 0), Point(bottomX, height)]);
+  }) =>
+      GutterPath([Point(topX, 0), Point(bottomX, height)]);
 
   GutterPath withPoint(int index, Point<double> point) {
     final next = [...points];

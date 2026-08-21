@@ -41,7 +41,17 @@ class BookProcessor {
     required Uint8List imageBytes,
     required List<Point<double>> outerCorners,
   }) {
-    return ImageWarper.warpOnly(imageBytes: imageBytes, corners: outerCorners);
+    final spread = ImageWarper.warpOnly(
+      imageBytes: imageBytes,
+      corners: outerCorners,
+    );
+    // The gutter detector and the simple split fallback operate on a
+    // left/right book layout. A phone can be held sideways, producing a
+    // perfectly valid but portrait rectified spread with the spine running
+    // horizontally. Canonicalise that case before either UI is shown.
+    return spread.height > spread.width
+        ? ImageWarper.rotateCounterClockwise(spread)
+        : spread;
   }
 
   /// Stage 3 + 4 (design doc §4 step 3): split the already-flattened
@@ -57,15 +67,16 @@ class BookProcessor {
     required WarpResult spread,
     required GutterLine gutter,
     required ColorMode colorMode,
-  }) => splitAndWarpPath(
-    spread: spread,
-    gutter: GutterPath.fromLine(
-      topX: gutter.topX,
-      bottomX: gutter.bottomX,
-      height: spread.height.toDouble(),
-    ),
-    colorMode: colorMode,
-  );
+  }) =>
+      splitAndWarpPath(
+        spread: spread,
+        gutter: GutterPath.fromLine(
+          topX: gutter.topX,
+          bottomX: gutter.bottomX,
+          height: spread.height.toDouble(),
+        ),
+        colorMode: colorMode,
+      );
 
   /// V2 entry point. The current perspective-only fallback reduces the
   /// path to its end points because a homography only accepts four corners.
