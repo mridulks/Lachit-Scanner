@@ -21,9 +21,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // captured page (or page pair, for Book Mode) creates one — see
     // CornerAdjustScreen._confirm().
     ref.read(activeDocumentProvider.notifier).state = null;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)),
-    );
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)));
     setState(() {});
   }
 
@@ -78,7 +77,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final doc = docs[index];
                 final pages = storage.pagesFor(doc);
                 final pageCount = pages.length;
-                final isBookDoc = pages.isNotEmpty &&
+                final isBookDoc =
+                    pages.isNotEmpty &&
                     pages.first.sourceMode != PageSourceMode.document;
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),

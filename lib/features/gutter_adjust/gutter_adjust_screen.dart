@@ -1,15 +1,3 @@
-// Gutter (spine fold) marking — shown after the outer spread quad is
-// confirmed. Deliberately has NO algorithmic detection and NO coordinate
-// transform: the user marks the gutter directly on the ALREADY-FLATTENED
-// spread image, in the exact same pixel space BookProcessor.splitAndWarp
-// consumes. Two earlier approaches both proved unreliable in practice —
-// darkness/gradient auto-detection, and marking on the raw un-warped
-// photo then mapping through a hand-derived perspective transform (which
-// is unverifiable without a device to actually run it on, and turned out
-// to be the source of a real bug). Marking directly on the flattened
-// image removes both failure modes at once: nothing to get subtly wrong
-// in translation, because there IS no translation.
-
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -18,14 +6,17 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/cv/book_geometry.dart';
 import '../../core/cv/book_processor.dart';
+import '../../core/cv/gutter_detector.dart';
 import '../../core/cv/warp.dart';
 import '../../core/providers.dart';
 import '../../models/page.dart' as model;
 import '../document_editor/document_editor_screen.dart';
 
+/// Reviews the automatic curved-gutter estimate and remains the manual
+/// fallback when the image has no dependable spine evidence.
 class GutterAdjustScreen extends ConsumerStatefulWidget {
-  /// The already-flattened whole-spread image (Book Mode stage 1 output).
   final WarpResult spread;
   final model.ColorMode colorMode;
 
@@ -41,12 +32,10 @@ class GutterAdjustScreen extends ConsumerStatefulWidget {
 
 class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
   ui.Image? _decoded;
-  GutterLine? _gutter;
+  GutterPath? _gutter;
+  GutterDetection? _detection;
   bool _saving = false;
-
-  // 0 = dragging top handle, 1 = dragging bottom handle, -1 = none.
-  int _draggingHandle = -1;
-
+  int _draggingPoint = -1;
   double _scale = 1;
   Offset _origin = Offset.zero;
 
@@ -59,113 +48,116 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
   Future<void> _load() async {
     final codec = await ui.instantiateImageCodec(widget.spread.jpegBytes);
     final frame = await codec.getNextFrame();
-    // Default: a straight line down the visual middle. No detection —
-    // just a sane, easy-to-see starting point for you to drag onto the
-    // actual gap.
-    final centerX = frame.image.width / 2.0;
+    GutterDetection? detection;
+    try {
+      detection = GutterDetector.detect(widget.spread.jpegBytes);
+    } catch (_) {
+      // A manual centred path is always available if OpenCV cannot analyse a
+      // particular device/image format.
+    }
+    if (!mounted) return;
     setState(() {
       _decoded = frame.image;
-      _gutter = GutterLine(centerX, centerX);
+      _detection = detection;
+      _gutter = detection?.path ??
+          GutterPath.centered(
+            width: frame.image.width.toDouble(),
+            height: frame.image.height.toDouble(),
+          );
     });
   }
 
-  void _updateTransform(Size viewSize) {
+  void _updateTransform(Size size) {
     if (_decoded == null) return;
-    final imgW = _decoded!.width.toDouble();
-    final imgH = _decoded!.height.toDouble();
-    final scale = min(viewSize.width / imgW, viewSize.height / imgH);
-    final dispW = imgW * scale;
-    final dispH = imgH * scale;
-    _scale = scale;
+    final imageSize = Size(
+      _decoded!.width.toDouble(),
+      _decoded!.height.toDouble(),
+    );
+    _scale = min(size.width / imageSize.width, size.height / imageSize.height);
     _origin = Offset(
-      (viewSize.width - dispW) / 2,
-      (viewSize.height - dispH) / 2,
+      (size.width - imageSize.width * _scale) / 2,
+      (size.height - imageSize.height * _scale) / 2,
     );
   }
 
-  Offset _imageToScreen(double x, double y) =>
-      Offset(x * _scale, y * _scale) + _origin;
+  Offset _imageToScreen(Point<double> point) =>
+      Offset(point.x * _scale, point.y * _scale) + _origin;
 
-  double _screenXToImageX(double screenX) => (screenX - _origin.dx) / _scale;
-
-  /// Which handle a touch controls, and updates it immediately — no need
-  /// to precisely land on the small circle first. Touching/dragging
-  /// ANYWHERE in the top half of the image moves the top point to that
-  /// x; anywhere in the bottom half moves the bottom point. Far more
-  /// forgiving on a touchscreen than requiring a precise grab, especially
-  /// with the handles sitting right at the very top/bottom edges of the
-  /// image, tight against the app bar and button row.
-  void _updateGutterFromTouch(Offset localPos, {required bool isStart}) {
-    if (_decoded == null || _gutter == null) return;
-    final imgH = _decoded!.height.toDouble();
-    final imgW = _decoded!.width.toDouble();
-    final x = _screenXToImageX(localPos.dx).clamp(0.0, imgW);
-
-    if (isStart) {
-      // Decide ONCE, at touch-down, which handle this whole gesture
-      // controls — based on which half of the image was touched. Locking
-      // it here (rather than re-deciding every frame) stops the line
-      // from "flipping" to the other handle mid-drag if your finger
-      // wanders past the vertical midpoint.
-      final touchImgY = (localPos.dy - _origin.dy) / _scale;
-      _draggingHandle = touchImgY <= imgH / 2 ? 0 : 1;
+  int _nearestControlPoint(Offset screenPoint) {
+    final points = _gutter!.points;
+    var nearest = 0;
+    var distance = double.infinity;
+    for (var i = 0; i < points.length; i++) {
+      final candidate = (_imageToScreen(points[i]) - screenPoint).distance;
+      if (candidate < distance) {
+        nearest = i;
+        distance = candidate;
+      }
     }
-    if (_draggingHandle == -1) return;
+    // Tapping anywhere on the image chooses the closest row. This makes
+    // editing usable even where a handle sits near the display edge.
+    return nearest;
+  }
 
-    setState(() {
-      _gutter = _draggingHandle == 0
-          ? GutterLine(x, _gutter!.bottomX)
-          : GutterLine(_gutter!.topX, x);
-    });
+  void _updateGutter(Offset localPosition, {required bool start}) {
+    if (_decoded == null || _gutter == null) return;
+    if (start) {
+      _draggingPoint = _nearestControlPoint(localPosition);
+    }
+    if (_draggingPoint < 0) return;
+    final x = ((localPosition.dx - _origin.dx) / _scale).clamp(
+      0.0,
+      _decoded!.width.toDouble(),
+    );
+    final old = _gutter!.points[_draggingPoint];
+    setState(
+      () => _gutter = _gutter!.withPoint(_draggingPoint, Point(x, old.y)),
+    );
   }
 
   void _resetToCenter() {
     if (_decoded == null) return;
-    final centerX = _decoded!.width / 2.0;
-    setState(() => _gutter = GutterLine(centerX, centerX));
+    setState(
+      () => _gutter = GutterPath.centered(
+        width: _decoded!.width.toDouble(),
+        height: _decoded!.height.toDouble(),
+      ),
+    );
   }
 
   Future<void> _confirm() async {
     if (_gutter == null || _saving) return;
     setState(() => _saving = true);
     try {
-      // No coordinate translation needed here at all — _gutter is
-      // already in widget.spread's own pixel space, which is exactly
-      // what splitAndWarp expects.
-      final split = BookProcessor.splitAndWarp(
+      final split = BookProcessor.splitAndWarpPath(
         spread: widget.spread,
         gutter: _gutter!,
         colorMode: widget.colorMode,
       );
-
       final storage = ref.read(storageProvider);
       var doc = ref.read(activeDocumentProvider);
       doc ??= await storage.createDocument();
       ref.read(activeDocumentProvider.notifier).state = doc;
       final docDir = await storage.documentDir(doc.id);
 
-      final leftId = storage.newId();
-      final leftPath = '${docDir.path}/$leftId.jpg';
-      await File(leftPath).writeAsBytes(split.left.jpegBytes);
-      await storage.addPage(
-        doc,
-        imagePath: leftPath,
-        sourceMode: model.PageSourceMode.bookLeft,
-        colorMode: widget.colorMode,
-      );
+      Future<void> savePage(
+        Uint8List bytes,
+        model.PageSourceMode sourceMode,
+      ) async {
+        final id = storage.newId();
+        final path = '${docDir.path}/$id.jpg';
+        await File(path).writeAsBytes(bytes);
+        await storage.addPage(
+          doc!,
+          imagePath: path,
+          sourceMode: sourceMode,
+          colorMode: widget.colorMode,
+        );
+      }
 
-      final rightId = storage.newId();
-      final rightPath = '${docDir.path}/$rightId.jpg';
-      await File(rightPath).writeAsBytes(split.right.jpegBytes);
-      await storage.addPage(
-        doc,
-        imagePath: rightPath,
-        sourceMode: model.PageSourceMode.bookRight,
-        colorMode: widget.colorMode,
-      );
-
+      await savePage(split.left.jpegBytes, model.PageSourceMode.bookLeft);
+      await savePage(split.right.jpegBytes, model.PageSourceMode.bookRight);
       ref.read(documentVersionProvider.notifier).state++;
-
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
@@ -174,10 +166,9 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
         (route) => route.isFirst,
       );
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Processing failed: $e')));
-      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -185,34 +176,32 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final automatic = _detection?.isReliable ?? false;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Mark the gutter (spine)'),
+        title: const Text('Review book gutter'),
       ),
       body: _decoded == null || _gutter == null
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : LayoutBuilder(
               builder: (context, constraints) {
                 _updateTransform(
-                    Size(constraints.maxWidth, constraints.maxHeight));
-                final imgH = _decoded!.height.toDouble();
+                  Size(constraints.maxWidth, constraints.maxHeight),
+                );
                 return GestureDetector(
-                  onPanStart: (d) {
-                    _updateGutterFromTouch(d.localPosition, isStart: true);
-                  },
-                  onPanUpdate: (d) {
-                    _updateGutterFromTouch(d.localPosition, isStart: false);
-                  },
-                  onPanEnd: (_) => _draggingHandle = -1,
+                  onPanStart: (details) =>
+                      _updateGutter(details.localPosition, start: true),
+                  onPanUpdate: (details) =>
+                      _updateGutter(details.localPosition, start: false),
+                  onPanEnd: (_) => _draggingPoint = -1,
                   child: CustomPaint(
                     size: Size(constraints.maxWidth, constraints.maxHeight),
                     painter: _GutterPainter(
                       image: _decoded!,
-                      topPoint: _imageToScreen(_gutter!.topX, 0),
-                      bottomPoint: _imageToScreen(_gutter!.bottomX, imgH),
+                      points: _gutter!.points.map(_imageToScreen).toList(),
                     ),
                   ),
                 );
@@ -224,13 +213,12 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Drag either end of the line onto the blank gap between the pages.',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
+              Text(
+                automatic
+                    ? 'Automatic gutter detected. Drag any point to fine-tune it.'
+                    : 'Could not confidently detect the gutter. Drag the points onto the spine.',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                textAlign: TextAlign.center,
               ),
               TextButton(
                 onPressed: _resetToCenter,
@@ -270,49 +258,46 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
 
 class _GutterPainter extends CustomPainter {
   final ui.Image image;
-  final Offset topPoint;
-  final Offset bottomPoint;
-
-  _GutterPainter({
-    required this.image,
-    required this.topPoint,
-    required this.bottomPoint,
-  });
+  final List<Offset> points;
+  const _GutterPainter({required this.image, required this.points});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final src = Rect.fromLTWH(
-        0, 0, image.width.toDouble(), image.height.toDouble());
-    final imgW = image.width.toDouble();
-    final imgH = image.height.toDouble();
-    final scale = min(size.width / imgW, size.height / imgH);
-    final dispW = imgW * scale;
-    final dispH = imgH * scale;
-    final dst = Rect.fromLTWH(
-      (size.width - dispW) / 2,
-      (size.height - dispH) / 2,
-      dispW,
-      dispH,
+    final imageSize = Size(image.width.toDouble(), image.height.toDouble());
+    final scale = min(
+      size.width / imageSize.width,
+      size.height / imageSize.height,
     );
-    canvas.drawImageRect(image, src, dst, Paint());
-
-    final linePaint = Paint()
-      ..color = const Color(0xFFFF6B6B)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(topPoint, bottomPoint, linePaint);
-
-    final handlePaint = Paint()..color = Colors.white;
-    final handleBorder = Paint()
+    final destination = Rect.fromLTWH(
+      (size.width - imageSize.width * scale) / 2,
+      (size.height - imageSize.height * scale) / 2,
+      imageSize.width * scale,
+      imageSize.height * scale,
+    );
+    canvas.drawImageRect(image, Offset.zero & imageSize, destination, Paint());
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFFFF6B6B)
+        ..strokeWidth = 3
+        ..style = PaintingStyle.stroke,
+    );
+    final fill = Paint()..color = Colors.white;
+    final border = Paint()
       ..color = const Color(0xFFFF6B6B)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
-    for (final p in [topPoint, bottomPoint]) {
-      canvas.drawCircle(p, 12, handlePaint);
-      canvas.drawCircle(p, 12, handleBorder);
+    for (final point in points) {
+      canvas.drawCircle(point, 10, fill);
+      canvas.drawCircle(point, 10, border);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GutterPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _GutterPainter oldDelegate) =>
+      oldDelegate.image != image || oldDelegate.points != points;
 }

@@ -60,10 +60,7 @@ class StorageService {
 
   Future<ScanDocument> createDocument({String? name}) async {
     final id = newId();
-    final doc = ScanDocument(
-      id: id,
-      name: name ?? _defaultDocName(),
-    );
+    final doc = ScanDocument(id: id, name: name ?? _defaultDocName());
     await documentsBox.put(id, doc);
     await documentDir(id); // ensure folder exists
     return doc;
@@ -136,7 +133,10 @@ class StorageService {
     return pages;
   }
 
-  Future<void> reorderPages(ScanDocument doc, List<String> newPageIdOrder) async {
+  Future<void> reorderPages(
+    ScanDocument doc,
+    List<String> newPageIdOrder,
+  ) async {
     for (var i = 0; i < newPageIdOrder.length; i++) {
       final page = pagesBox.get(newPageIdOrder[i]);
       if (page != null) {

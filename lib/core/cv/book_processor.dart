@@ -14,11 +14,13 @@ import 'dart:typed_data';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import '../../models/page.dart';
+import 'book_geometry.dart';
 import 'warp.dart';
 
 /// A straight line marking where to split the flattened spread —
 /// [topX]/[bottomX] are x-coordinates at y=0 and y=[height] respectively,
 /// in the FLATTENED spread's own coordinate space (not the raw photo's).
+@Deprecated('Use GutterPath. Kept for source compatibility with V1 callers.')
 class GutterLine {
   final double topX;
   final double bottomX;
@@ -55,6 +57,23 @@ class BookProcessor {
     required WarpResult spread,
     required GutterLine gutter,
     required ColorMode colorMode,
+  }) => splitAndWarpPath(
+    spread: spread,
+    gutter: GutterPath.fromLine(
+      topX: gutter.topX,
+      bottomX: gutter.bottomX,
+      height: spread.height.toDouble(),
+    ),
+    colorMode: colorMode,
+  );
+
+  /// V2 entry point. The current perspective-only fallback reduces the
+  /// path to its end points because a homography only accepts four corners.
+  /// The full path is preserved in the model/UI for future mesh dewarping.
+  static BookSplitResult splitAndWarpPath({
+    required WarpResult spread,
+    required GutterPath gutter,
+    required ColorMode colorMode,
   }) {
     final spreadMat = cv.imdecode(spread.jpegBytes, cv.IMREAD_COLOR);
     cv.Mat leftWarped = cv.Mat.empty();
@@ -67,15 +86,15 @@ class BookProcessor {
 
       final leftQuad = [
         Point(0.0, 0.0),
-        Point(gutter.topX, 0.0),
-        Point(gutter.bottomX, h),
+        Point(gutter.xAt(0), 0.0),
+        Point(gutter.xAt(h), h),
         Point(0.0, h),
       ];
       final rightQuad = [
-        Point(gutter.topX, 0.0),
+        Point(gutter.xAt(0), 0.0),
         Point(w, 0.0),
         Point(w, h),
-        Point(gutter.bottomX, h),
+        Point(gutter.xAt(h), h),
       ];
 
       leftWarped = ImageWarper.warpMatToQuadFlat(spreadMat, leftQuad);

@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+
 import 'page.dart';
 
 part 'document.g.dart';
@@ -26,7 +27,7 @@ class ScanDocument extends HiveObject {
     DateTime? createdAt,
     DateTime? updatedAt,
     List<String>? pageIds,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now(),
-        pageIds = pageIds ?? [];
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now(),
+       pageIds = pageIds ?? [];
 }

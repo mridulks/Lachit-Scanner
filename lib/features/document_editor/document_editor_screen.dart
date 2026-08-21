@@ -76,22 +76,19 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
     // document keeps scanning spreads, and "+" on a plain document keeps
     // scanning single pages, without asking every time.
     final pages = storage.pagesFor(doc);
-    final kind = pages.isNotEmpty && pages.last.sourceMode != PageSourceMode.document
+    final kind =
+        pages.isNotEmpty && pages.last.sourceMode != PageSourceMode.document
         ? ScanKind.book
         : ScanKind.document;
 
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)),
-    );
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)));
     setState(() {}); // storage already bumped documentVersionProvider
   }
 
   Future<void> _retake(ScanPage page) async {
-    final capturedPath = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const ScannerScreen(),
-      ),
-    );
+    final capturedPath = await Navigator.of(context)
+        .push<String>(MaterialPageRoute(builder: (_) => const ScannerScreen()));
     // Phase 1 note: ScannerScreen currently always creates/appends a new
     // page rather than returning a path for in-place replacement. Wiring
     // retake through StorageService.replacePageImage() is a small follow-up
@@ -137,7 +134,11 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
     }
   }
 
-  Future<void> _reorder(int oldIndex, int newIndex, List<ScanPage> pages) async {
+  Future<void> _reorder(
+    int oldIndex,
+    int newIndex,
+    List<ScanPage> pages,
+  ) async {
     final storage = ref.read(storageProvider);
     if (newIndex > oldIndex) newIndex -= 1;
     final ids = pages.map((p) => p.id).toList();
@@ -176,10 +177,10 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
             onPressed: pages.isEmpty
                 ? null
                 : () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ExportScreen(document: doc),
-                      ),
+                    MaterialPageRoute(
+                      builder: (_) => ExportScreen(document: doc),
                     ),
+                  ),
           ),
         ],
       ),

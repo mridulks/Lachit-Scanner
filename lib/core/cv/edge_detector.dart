@@ -56,10 +56,7 @@ class EdgeDetector {
   /// (low, high) Canny threshold pairs to try. Pooling candidates across
   /// both — rather than committing to one fixed pair — means a photo that
   /// just doesn't suit one threshold still has a chance via the other.
-  static const _cannyThresholdPairs = [
-    (50, 150),
-    (30, 100),
-  ];
+  static const _cannyThresholdPairs = [(50, 150), (30, 100)];
 
   /// Runs detection on a full-resolution image (bytes) and returns the
   /// best-SCORING 4-point quad, scaled back to full-resolution
@@ -69,7 +66,10 @@ class EdgeDetector {
   static DetectedQuad? detect(Uint8List imageBytes, {double? minAreaFraction}) {
     final full = cv.imdecode(imageBytes, cv.IMREAD_COLOR);
     try {
-      return _detectOnMat(full, minAreaFraction ?? EdgeDetector.minAreaFraction);
+      return _detectOnMat(
+        full,
+        minAreaFraction ?? EdgeDetector.minAreaFraction,
+      );
     } finally {
       full.dispose();
     }
@@ -77,10 +77,10 @@ class EdgeDetector {
 
   static DetectedQuad? _detectOnMat(cv.Mat full, double minAreaFraction) {
     final scale = detectionWidth / full.cols;
-    final small = cv.resize(
-      full,
-      (detectionWidth, (full.rows * scale).round()),
-    );
+    final small = cv.resize(full, (
+      detectionWidth,
+      (full.rows * scale).round(),
+    ));
 
     cv.Mat gray = cv.Mat.empty();
     cv.Mat blurred = cv.Mat.empty();
@@ -170,7 +170,10 @@ class EdgeDetector {
         totalDeviation += 90;
         continue;
       }
-      final cosAngle = ((v1x * v2x + v1y * v2y) / (mag1 * mag2)).clamp(-1.0, 1.0);
+      final cosAngle = ((v1x * v2x + v1y * v2y) / (mag1 * mag2)).clamp(
+        -1.0,
+        1.0,
+      );
       final angleDeg = acos(cosAngle) * 180 / pi;
       totalDeviation += (angleDeg - 90).abs();
     }

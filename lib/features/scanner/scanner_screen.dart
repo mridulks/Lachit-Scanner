@@ -98,10 +98,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: Text(isBook ? 'Scan book' : 'Scan')),
-        body: Center(child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(_error!, textAlign: TextAlign.center),
-        )),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(_error!, textAlign: TextAlign.center),
+          ),
+        ),
       );
     }
 
@@ -150,7 +152,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         ),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           child: Text(
                             'For best results, place the open book on a\n'
                             'plain, contrasting surface',

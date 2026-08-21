@@ -33,10 +33,10 @@ class PdfBuilder {
 
       final pageFormat = switch (sizing) {
         PdfPageSizing.matchImage => PdfPageFormat(
-            rotated.width.toDouble(),
-            rotated.height.toDouble(),
-            marginAll: 0,
-          ),
+          rotated.width.toDouble(),
+          rotated.height.toDouble(),
+          marginAll: 0,
+        ),
         PdfPageSizing.a4Fit => PdfPageFormat.a4,
         PdfPageSizing.letterFit => PdfPageFormat.letter,
       };

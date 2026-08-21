@@ -19,6 +19,7 @@ enum ExportFormat { pdf, images }
 
 class ExportScreen extends ConsumerStatefulWidget {
   final ScanDocument document;
+
   /// If set, only this single page is exported (per-page "Export" menu
   /// item); otherwise all pages in the document are exported.
   final ScanPage? singlePage;
@@ -116,8 +117,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           ),
           const Divider(height: 32),
           if (_format == ExportFormat.pdf) ...[
-            const Text('Page size',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Page size',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             RadioListTile<PdfPageSizing>(
               title: const Text('Match scanned image'),
               value: PdfPageSizing.matchImage,
@@ -137,7 +140,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               onChanged: (v) => setState(() => _sizing = v!),
             ),
           ] else ...[
-            const Text('Quality', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Quality',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             RadioListTile<ExportQuality>(
               title: const Text('Small — best for chat/email'),
               value: ExportQuality.small,

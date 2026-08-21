@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cv/book_processor.dart';
+import '../../core/cv/book_detector.dart';
 import '../../core/cv/edge_detector.dart';
 import '../../core/cv/warp.dart';
 import '../../core/providers.dart';
@@ -37,8 +38,7 @@ class CornerAdjustScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<CornerAdjustScreen> createState() =>
-      _CornerAdjustScreenState();
+  ConsumerState<CornerAdjustScreen> createState() => _CornerAdjustScreenState();
 }
 
 // Which two corner indices bound each edge, in the same TL,TR,BR,BL
@@ -64,7 +64,8 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   int _draggingIndex = -1;
   Point<double>? _lastDragImagePoint; // for delta-based edge translation
 
-  model.ColorMode _colorMode = model.ColorMode.bw; // default, matches ScanPage's own default
+  model.ColorMode _colorMode =
+      model.ColorMode.bw; // default, matches ScanPage's own default
 
   // Screen<->image coordinate mapping, computed on layout.
   double _scale = 1;
@@ -83,13 +84,17 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
 
     DetectedQuad? quad;
     try {
-      // Book Mode: the whole spread often occupies less of the frame and
-      // reads lower-contrast than a single held-up document, so search
-      // with a looser area threshold (design doc §4 step 1).
-      quad = EdgeDetector.detect(
-        bytes,
-        minAreaFraction: widget.scanKind == ScanKind.book ? 0.12 : null,
-      );
+      // Books are detected by their dedicated detector. It currently uses
+      // the established contour scorer internally, but returns book-specific
+      // geometry so its implementation can evolve independently.
+      if (widget.scanKind == ScanKind.book) {
+        final book = BookDetector.detect(bytes);
+        quad = book == null
+            ? null
+            : DetectedQuad(book.outerBoundary, book.confidence);
+      } else {
+        quad = EdgeDetector.detect(bytes);
+      }
     } catch (_) {
       quad = null; // fall through to manual fallback quad below
     }
@@ -97,7 +102,8 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     setState(() {
       _bytes = bytes;
       _decoded = frame.image;
-      _corners = quad?.corners ??
+      _corners =
+          quad?.corners ??
           EdgeDetector.fallbackQuad(
             frame.image.width.toDouble(),
             frame.image.height.toDouble(),
@@ -132,7 +138,10 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     final c = _corners!;
     return [
       for (final pair in _edgeCornerPairs)
-        Point((c[pair[0]].x + c[pair[1]].x) / 2, (c[pair[0]].y + c[pair[1]].y) / 2),
+        Point(
+          (c[pair[0]].x + c[pair[1]].x) / 2,
+          (c[pair[0]].y + c[pair[1]].y) / 2,
+        ),
     ];
   }
 
@@ -174,10 +183,8 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => GutterAdjustScreen(
-              spread: spread,
-              colorMode: _colorMode,
-            ),
+            builder: (_) =>
+                GutterAdjustScreen(spread: spread, colorMode: _colorMode),
           ),
         );
         return; // GutterAdjustScreen owns saving + navigating onward
@@ -192,11 +199,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
       final pageId = storage.newId();
       final outPath = '${docDir.path}/$pageId.jpg';
       await File(outPath).writeAsBytes(result.jpegBytes);
-      await storage.addPage(
-        doc,
-        imagePath: outPath,
-        colorMode: _colorMode,
-      );
+      await storage.addPage(doc, imagePath: outPath, colorMode: _colorMode);
 
       ref.read(documentVersionProvider.notifier).state++;
 
@@ -224,22 +227,26 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.scanKind == ScanKind.book
-            ? 'Adjust book spread corners'
-            : 'Adjust corners'),
+        title: Text(
+          widget.scanKind == ScanKind.book
+              ? 'Adjust book spread corners'
+              : 'Adjust corners',
+        ),
       ),
       body: _detecting || _decoded == null
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : LayoutBuilder(
               builder: (context, constraints) {
                 _updateTransform(
-                    Size(constraints.maxWidth, constraints.maxHeight));
+                  Size(constraints.maxWidth, constraints.maxHeight),
+                );
                 return GestureDetector(
                   onPanStart: (d) {
                     final idx = _hitTestHandle(d.localPosition) ?? -1;
                     _draggingIndex = idx;
-                    _lastDragImagePoint =
-                        idx == -1 ? null : _screenToImage(d.localPosition);
+                    _lastDragImagePoint = idx == -1
+                        ? null
+                        : _screenToImage(d.localPosition);
                   },
                   onPanUpdate: (d) {
                     if (_draggingIndex == -1) return;
@@ -254,7 +261,8 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                         // moves as a rigid unit up/down/left/right.
                         final dx = newPoint.x - _lastDragImagePoint!.x;
                         final dy = newPoint.y - _lastDragImagePoint!.y;
-                        for (final cornerIdx in _edgeCornerPairs[_draggingIndex - 4]) {
+                        for (final cornerIdx
+                            in _edgeCornerPairs[_draggingIndex - 4]) {
                           final c = _corners![cornerIdx];
                           _corners![cornerIdx] = Point(c.x + dx, c.y + dy);
                         }
@@ -271,8 +279,9 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                     painter: _QuadPainter(
                       image: _decoded!,
                       corners: _corners!.map(_imageToScreen).toList(),
-                      edgeMidpoints:
-                          _edgeMidpoints().map(_imageToScreen).toList(),
+                      edgeMidpoints: _edgeMidpoints()
+                          .map(_imageToScreen)
+                          .toList(),
                     ),
                   ),
                 );
@@ -326,9 +335,11 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(widget.scanKind == ScanKind.book
-                              ? 'Next: mark gutter'
-                              : 'Use this'),
+                          : Text(
+                              widget.scanKind == ScanKind.book
+                                  ? 'Next: mark gutter'
+                                  : 'Use this',
+                            ),
                     ),
                   ),
                 ],
@@ -356,7 +367,11 @@ class _QuadPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Draw the captured photo, letterboxed.
     final src = Rect.fromLTWH(
-        0, 0, image.width.toDouble(), image.height.toDouble());
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
     final imgW = image.width.toDouble();
     final imgH = image.height.toDouble();
     final scale = min(size.width / imgW, size.height / imgH);

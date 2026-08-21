@@ -121,8 +121,11 @@ class ImageWarper {
   /// Encodes [mat] to JPEG and wraps it with its dimensions. Does NOT
   /// dispose [mat] — caller still owns it.
   static WarpResult encodeJpeg(cv.Mat mat, {int quality = 92}) {
-    final (success, encoded) = cv.imencode('.jpg', mat,
-        params: cv.VecI32.fromList([cv.IMWRITE_JPEG_QUALITY, quality]));
+    final (success, encoded) = cv.imencode(
+      '.jpg',
+      mat,
+      params: cv.VecI32.fromList([cv.IMWRITE_JPEG_QUALITY, quality]),
+    );
     if (!success) {
       throw StateError('JPEG encode failed after warp.');
     }
