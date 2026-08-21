@@ -1,13 +1,9 @@
-// Book Mode processing pipeline (design doc §4, steps 1–3).
+// Book Mode processing pipeline (design doc §4, step 3 — split + re-warp).
 //
-// Split into explicit stages (rather than one do-everything call) so the
-// UI can show the user the detected gutter line and let them adjust it
-// before the final split+warp actually runs — see
-// features/gutter_adjust/gutter_adjust_screen.dart. Detecting a spine
-// fold from a shadow is inherently less reliable than the user's own
-// eyes, so — same philosophy as the manual corner-adjust fallback in
-// Document Mode — auto-detect should be a starting point, not the final
-// word, whenever there's no live preview to catch it going wrong first.
+// Step 2 (gutter marking) is handled entirely by the UI now
+// (GutterAdjustScreen) — the user marks it directly on the already-
+// flattened spread this module produces, so this file has no detection
+// logic of its own to get wrong.
 //
 // Step 4 (curvature/mesh dewarping near the spine) is explicitly deferred
 // per the design doc — out of scope for v1.
@@ -18,8 +14,16 @@ import 'dart:typed_data';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import '../../models/page.dart';
-import 'gutter_detector.dart';
 import 'warp.dart';
+
+/// A straight line marking where to split the flattened spread —
+/// [topX]/[bottomX] are x-coordinates at y=0 and y=[height] respectively,
+/// in the FLATTENED spread's own coordinate space (not the raw photo's).
+class GutterLine {
+  final double topX;
+  final double bottomX;
+  const GutterLine(this.topX, this.bottomX);
+}
 
 class BookSplitResult {
   final WarpResult left;
@@ -38,14 +42,6 @@ class BookProcessor {
     return ImageWarper.warpOnly(imageBytes: imageBytes, corners: outerCorners);
   }
 
-  /// Stage 2 (design doc §4 step 2): detect the gutter (spine fold)
-  /// within an already-flattened spread. Exposed separately from
-  /// [flattenSpread] so the UI can show this as an adjustable starting
-  /// point rather than a black box.
-  static GutterLine detectGutter(WarpResult spread) {
-    return GutterDetector.detect(spread.jpegBytes);
-  }
-
   /// Stage 3 + 4 (design doc §4 step 3): split the already-flattened
   /// [spread] at [gutter], independently re-warp each half (this is what
   /// corrects any tilt the gutter line captured — a plain crop wouldn't),
@@ -54,7 +50,7 @@ class BookProcessor {
   /// Because stage 1 already flattened the outer boundary, the top/
   /// bottom/outer edges of each half are already known straight lines at
   /// (0,0)-(W,0)-(W,H)-(0,H) — only the gutter (4th edge) needed
-  /// detecting/adjusting, which stages 2 (and the UI) handled.
+  /// marking, which the user did directly on the corner-adjust screen.
   static BookSplitResult splitAndWarp({
     required WarpResult spread,
     required GutterLine gutter,

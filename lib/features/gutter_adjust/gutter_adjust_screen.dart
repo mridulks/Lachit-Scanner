@@ -1,8 +1,14 @@
-// Gutter (spine fold) preview + adjustment — the missing link in Book
-// Mode: without this, an auto-detected gutter that lands in the wrong
-// place had no way to be caught before two bad pages got saved. Same
-// philosophy as Document Mode's corner-adjust fallback: show the
-// detection, let the user drag it, THEN process.
+// Gutter (spine fold) marking — shown after the outer spread quad is
+// confirmed. Deliberately has NO algorithmic detection and NO coordinate
+// transform: the user marks the gutter directly on the ALREADY-FLATTENED
+// spread image, in the exact same pixel space BookProcessor.splitAndWarp
+// consumes. Two earlier approaches both proved unreliable in practice —
+// darkness/gradient auto-detection, and marking on the raw un-warped
+// photo then mapping through a hand-derived perspective transform (which
+// is unverifiable without a device to actually run it on, and turned out
+// to be the source of a real bug). Marking directly on the flattened
+// image removes both failure modes at once: nothing to get subtly wrong
+// in translation, because there IS no translation.
 
 import 'dart:io';
 import 'dart:math';
@@ -13,7 +19,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/cv/book_processor.dart';
-import '../../core/cv/gutter_detector.dart';
 import '../../core/cv/warp.dart';
 import '../../core/providers.dart';
 import '../../models/page.dart' as model;
@@ -37,8 +42,6 @@ class GutterAdjustScreen extends ConsumerStatefulWidget {
 class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
   ui.Image? _decoded;
   GutterLine? _gutter;
-  GutterLine? _detectedGutter; // original auto-detected line, kept for "reset to detected"
-  bool _detecting = true;
   bool _saving = false;
 
   // 0 = dragging top handle, 1 = dragging bottom handle, -1 = none.
@@ -56,34 +59,14 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
   Future<void> _load() async {
     final codec = await ui.instantiateImageCodec(widget.spread.jpegBytes);
     final frame = await codec.getNextFrame();
-
-    GutterLine gutter;
-    try {
-      gutter = BookProcessor.detectGutter(widget.spread);
-    } catch (_) {
-      // Detection genuinely failing (not just landing off) is rare, but
-      // fall back to dead-center rather than leaving the user stuck.
-      final w = frame.image.width.toDouble();
-      gutter = GutterLine(w / 2, w / 2);
-    }
-
+    // Default: a straight line down the visual middle. No detection —
+    // just a sane, easy-to-see starting point for you to drag onto the
+    // actual gap.
+    final centerX = frame.image.width / 2.0;
     setState(() {
       _decoded = frame.image;
-      _gutter = gutter;
-      _detectedGutter = gutter;
-      _detecting = false;
+      _gutter = GutterLine(centerX, centerX);
     });
-  }
-
-  void _resetToCenter() {
-    if (_decoded == null) return;
-    final centerX = _decoded!.width / 2.0;
-    setState(() => _gutter = GutterLine(centerX, centerX));
-  }
-
-  void _resetToDetected() {
-    if (_detectedGutter == null) return;
-    setState(() => _gutter = _detectedGutter);
   }
 
   void _updateTransform(Size viewSize) {
@@ -105,20 +88,50 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
 
   double _screenXToImageX(double screenX) => (screenX - _origin.dx) / _scale;
 
-  int? _hitTestHandle(Offset screenPos) {
-    if (_gutter == null || _decoded == null) return null;
-    const hitRadius = 30.0;
-    final topPoint = _imageToScreen(_gutter!.topX, 0);
-    final bottomPoint = _imageToScreen(_gutter!.bottomX, _decoded!.height.toDouble());
-    if ((topPoint - screenPos).distance <= hitRadius) return 0;
-    if ((bottomPoint - screenPos).distance <= hitRadius) return 1;
-    return null;
+  /// Which handle a touch controls, and updates it immediately — no need
+  /// to precisely land on the small circle first. Touching/dragging
+  /// ANYWHERE in the top half of the image moves the top point to that
+  /// x; anywhere in the bottom half moves the bottom point. Far more
+  /// forgiving on a touchscreen than requiring a precise grab, especially
+  /// with the handles sitting right at the very top/bottom edges of the
+  /// image, tight against the app bar and button row.
+  void _updateGutterFromTouch(Offset localPos, {required bool isStart}) {
+    if (_decoded == null || _gutter == null) return;
+    final imgH = _decoded!.height.toDouble();
+    final imgW = _decoded!.width.toDouble();
+    final x = _screenXToImageX(localPos.dx).clamp(0.0, imgW);
+
+    if (isStart) {
+      // Decide ONCE, at touch-down, which handle this whole gesture
+      // controls — based on which half of the image was touched. Locking
+      // it here (rather than re-deciding every frame) stops the line
+      // from "flipping" to the other handle mid-drag if your finger
+      // wanders past the vertical midpoint.
+      final touchImgY = (localPos.dy - _origin.dy) / _scale;
+      _draggingHandle = touchImgY <= imgH / 2 ? 0 : 1;
+    }
+    if (_draggingHandle == -1) return;
+
+    setState(() {
+      _gutter = _draggingHandle == 0
+          ? GutterLine(x, _gutter!.bottomX)
+          : GutterLine(_gutter!.topX, x);
+    });
+  }
+
+  void _resetToCenter() {
+    if (_decoded == null) return;
+    final centerX = _decoded!.width / 2.0;
+    setState(() => _gutter = GutterLine(centerX, centerX));
   }
 
   Future<void> _confirm() async {
-    if (_gutter == null || _decoded == null || _saving) return;
+    if (_gutter == null || _saving) return;
     setState(() => _saving = true);
     try {
+      // No coordinate translation needed here at all — _gutter is
+      // already in widget.spread's own pixel space, which is exactly
+      // what splitAndWarp expects.
       final split = BookProcessor.splitAndWarp(
         spread: widget.spread,
         gutter: _gutter!,
@@ -177,29 +190,21 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Adjust the gutter (spine)'),
+        title: const Text('Mark the gutter (spine)'),
       ),
-      body: _detecting || _decoded == null || _gutter == null
+      body: _decoded == null || _gutter == null
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : LayoutBuilder(
               builder: (context, constraints) {
                 _updateTransform(
                     Size(constraints.maxWidth, constraints.maxHeight));
                 final imgH = _decoded!.height.toDouble();
-                final imgW = _decoded!.width.toDouble();
                 return GestureDetector(
                   onPanStart: (d) {
-                    _draggingHandle = _hitTestHandle(d.localPosition) ?? -1;
+                    _updateGutterFromTouch(d.localPosition, isStart: true);
                   },
                   onPanUpdate: (d) {
-                    if (_draggingHandle == -1) return;
-                    final x = _screenXToImageX(d.localPosition.dx)
-                        .clamp(0.0, imgW);
-                    setState(() {
-                      _gutter = _draggingHandle == 0
-                          ? GutterLine(x, _gutter!.bottomX)
-                          : GutterLine(_gutter!.topX, x);
-                    });
+                    _updateGutterFromTouch(d.localPosition, isStart: false);
                   },
                   onPanEnd: (_) => _draggingHandle = -1,
                   child: CustomPaint(
@@ -220,26 +225,16 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Padding(
-                padding: EdgeInsets.only(bottom: 12),
+                padding: EdgeInsets.only(bottom: 8),
                 child: Text(
-                  'Drag either end of the line so it follows the spine.',
+                  'Drag either end of the line onto the blank gap between the pages.',
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton(
-                    onPressed: _resetToCenter,
-                    child: const Text('Reset to center'),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: _resetToDetected,
-                    child: const Text('Reset to detected'),
-                  ),
-                ],
+              TextButton(
+                onPressed: _resetToCenter,
+                child: const Text('Reset to center'),
               ),
               const SizedBox(height: 4),
               Row(
@@ -247,7 +242,7 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Retake'),
+                      child: const Text('Back'),
                     ),
                   ),
                   const SizedBox(width: 12),

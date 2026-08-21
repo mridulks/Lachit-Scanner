@@ -1,9 +1,14 @@
 // Manual corner adjustment (design doc §3, step "manual corner adjustment
-// screen"). Auto-detect pre-populates the quad; the user can drag any of
-// the 4 CORNER handles to move that corner alone, or any of the 4 EDGE
-// (midpoint) handles to translate that whole side up/down/left/right —
-// 8 handles total. This is the essential fallback for dark book covers,
+// screen"). Auto-detect pre-populates the outer quad; the user can drag
+// any of the 4 CORNER handles to move that corner alone, or any of the 4
+// EDGE (midpoint) handles to translate that whole side up/down/left/right
+// — 8 handles total. This is the essential fallback for dark book covers,
 // low-contrast pages on white desks, etc.
+//
+// Book Mode: this screen only handles the OUTER spread boundary. The
+// gutter (spine) is marked on a separate screen, AFTER flattening — see
+// GutterAdjustScreen's doc comment for why marking it here (on the raw,
+// still-perspective-distorted photo) was dropped.
 
 import 'dart:io';
 import 'dart:math';
@@ -159,10 +164,9 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
       ref.read(activeDocumentProvider.notifier).state = doc;
 
       if (widget.scanKind == ScanKind.book) {
-        // Book Mode: flatten the spread now, then hand off to a screen
-        // that SHOWS the detected gutter line and lets the user drag it
-        // before the final split — auto-detect alone was landing wrong
-        // often enough (no way to catch/correct it) to need this step.
+        // Flatten the outer boundary now; the gutter gets marked on the
+        // NEXT screen, directly on this flattened result — see
+        // GutterAdjustScreen.
         final spread = BookProcessor.flattenSpread(
           imageBytes: _bytes!,
           outerCorners: _corners!,
@@ -323,7 +327,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : Text(widget.scanKind == ScanKind.book
-                              ? 'Next: gutter'
+                              ? 'Next: mark gutter'
                               : 'Use this'),
                     ),
                   ),

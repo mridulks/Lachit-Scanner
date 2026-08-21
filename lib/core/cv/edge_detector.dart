@@ -2,13 +2,23 @@
 //
 // Pipeline (see design doc §3):
 //   downscale -> grayscale -> gaussian blur -> canny -> dilate ->
-//   findContours -> approxPolyDP -> largest 4-point convex quad
+//   findContours -> approxPolyDP -> score candidates -> best 4-point quad
 //
-// NOTE: opencv_dart's exact API surface shifts a bit between versions.
-// The calls below match opencv_dart ^1.3.x. If `flutter pub get` resolves
-// a different minor version and something doesn't compile, check the
-// package's example app under its pub cache for the current method names —
-// the *algorithm* here won't need to change, just call-site syntax.
+// Scoring change (accuracy fine-tuning pass): originally the largest
+// area-qualifying 4-point contour won outright. On a cluttered/patterned
+// background, a big non-rectangular blob can out-area the actual book/
+// document. Candidates are now scored on BOTH area fraction AND how close
+// their corner angles are to 90° ("rectangularity"), so a smaller but
+// genuinely rectangular candidate can beat a larger but skewed one. Canny
+// is also now tried at two threshold pairs (not just one fixed pair) and
+// candidates from both passes are pooled, since a single fixed threshold
+// doesn't hold up across different lighting/contrast conditions.
+//
+// NOTE: opencv_dart's exact API surface shifts a bit between versions —
+// every call below is one that's already been confirmed working (see
+// warp.dart's history); the new logic here is calling those same proven
+// functions twice (once per threshold pair) plus pure-Dart scoring math,
+// so this shouldn't reopen prior API-drift issues.
 
 import 'dart:math';
 import 'dart:typed_data';
@@ -27,6 +37,13 @@ class DetectedQuad {
   DetectedQuad(this.corners, this.areaFraction);
 }
 
+class _Candidate {
+  final List<Point<double>> corners;
+  final double areaFraction;
+  final double score;
+  _Candidate(this.corners, this.areaFraction, this.score);
+}
+
 class EdgeDetector {
   /// Width we downscale to before running Canny — full res is only used
   /// once we actually warp.
@@ -36,11 +53,19 @@ class EdgeDetector {
   /// a candidate document boundary.
   static const double minAreaFraction = 0.20;
 
+  /// (low, high) Canny threshold pairs to try. Pooling candidates across
+  /// both — rather than committing to one fixed pair — means a photo that
+  /// just doesn't suit one threshold still has a chance via the other.
+  static const _cannyThresholdPairs = [
+    (50, 150),
+    (30, 100),
+  ];
+
   /// Runs detection on a full-resolution image (bytes) and returns the
-  /// best 4-point quad, scaled back to full-resolution coordinates, or
-  /// null if nothing confident was found. [minAreaFraction] can be
-  /// lowered for Book Mode, where a book on a desk may reasonably occupy
-  /// less of the frame than a single document held/placed close-up.
+  /// best-SCORING 4-point quad, scaled back to full-resolution
+  /// coordinates, or null if nothing qualified at all. [minAreaFraction]
+  /// can be lowered for Book Mode, where a book on a desk may reasonably
+  /// occupy less of the frame than a single document held/placed close-up.
   static DetectedQuad? detect(Uint8List imageBytes, {double? minAreaFraction}) {
     final full = cv.imdecode(imageBytes, cv.IMREAD_COLOR);
     try {
@@ -59,60 +84,98 @@ class EdgeDetector {
 
     cv.Mat gray = cv.Mat.empty();
     cv.Mat blurred = cv.Mat.empty();
-    cv.Mat edges = cv.Mat.empty();
-    cv.Mat dilated = cv.Mat.empty();
+    _Candidate? best;
 
     try {
       gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
       blurred = cv.gaussianBlur(gray, (5, 5), 0);
-      edges = cv.canny(blurred, 50, 150);
-      final kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3));
-      dilated = cv.dilate(edges, kernel);
-
-      final contours = cv.findContours(
-        dilated,
-        cv.RETR_LIST,
-        cv.CHAIN_APPROX_SIMPLE,
-      );
 
       final frameArea = small.cols * small.rows;
-      List<Point<double>>? bestQuad;
-      double bestArea = 0;
 
-      // contours.$1 is the VecVecPoint of contours in opencv_dart's
-      // (contours, hierarchy) tuple return; .toList() gives List<VecPoint>,
-      // i.e. each contour is already a VecPoint — no re-wrapping needed
-      // (dartcv4 1.1.8: VecPoint.fromList() builds FROM a List<Point>, it
-      // doesn't accept an existing VecPoint).
-      final contourList = contours.$1.toList()
-        ..sort((a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)));
+      for (final pair in _cannyThresholdPairs) {
+        cv.Mat edges = cv.Mat.empty();
+        cv.Mat dilated = cv.Mat.empty();
+        try {
+          edges = cv.canny(blurred, pair.$1.toDouble(), pair.$2.toDouble());
+          final kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3));
+          dilated = cv.dilate(edges, kernel);
 
-      for (final c in contourList.take(5)) {
-        final pts = c;
-        final area = cv.contourArea(pts);
-        if (area < frameArea * minAreaFraction) continue;
+          final contours = cv.findContours(
+            dilated,
+            cv.RETR_LIST,
+            cv.CHAIN_APPROX_SIMPLE,
+          );
 
-        final peri = cv.arcLength(pts, true);
-        final approx = cv.approxPolyDP(pts, 0.02 * peri, true);
-        final approxPts = approx.toList();
+          // contours.$1 is the VecVecPoint of contours in opencv_dart's
+          // (contours, hierarchy) tuple return; .toList() gives
+          // List<VecPoint>, i.e. each contour is already a VecPoint.
+          final contourList = contours.$1.toList()
+            ..sort((a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)));
 
-        if (approxPts.length == 4 && area > bestArea) {
-          bestArea = area;
-          bestQuad = approxPts
-              .map((p) => Point<double>(p.x / scale, p.y / scale))
-              .toList();
+          for (final c in contourList.take(8)) {
+            final area = cv.contourArea(c);
+            if (area < frameArea * minAreaFraction) continue;
+
+            final peri = cv.arcLength(c, true);
+            final approx = cv.approxPolyDP(c, 0.02 * peri, true);
+            final approxPts = approx.toList();
+            if (approxPts.length != 4) continue;
+
+            final quad = approxPts
+                .map((p) => Point<double>(p.x / scale, p.y / scale))
+                .toList();
+            final ordered = _orderCorners(quad);
+
+            final areaScore = area / frameArea;
+            final rectScore = _rectangularityScore(ordered);
+            // Weighted combined score. Rectangularity carries more
+            // weight than raw area — a large-but-skewed background blob
+            // should lose to a smaller genuinely-rectangular candidate.
+            final combined = areaScore * 0.4 + rectScore * 0.6;
+
+            if (best == null || combined > best!.score) {
+              best = _Candidate(ordered, areaScore, combined);
+            }
+          }
+        } finally {
+          edges.dispose();
+          dilated.dispose();
         }
       }
-
-      if (bestQuad == null) return null;
-      return DetectedQuad(_orderCorners(bestQuad), bestArea / frameArea);
     } finally {
       small.dispose();
       gray.dispose();
       blurred.dispose();
-      edges.dispose();
-      dilated.dispose();
     }
+
+    if (best == null) return null;
+    return DetectedQuad(best!.corners, best!.areaFraction);
+  }
+
+  /// 1.0 for a perfect rectangle (all corner angles == 90°), tapering to
+  /// 0.0 as the average angle deviation reaches 45°. Cheap, pure-Dart,
+  /// no opencv calls — this is what lets a smaller genuine quad beat a
+  /// larger but irregular one.
+  static double _rectangularityScore(List<Point<double>> quad) {
+    var totalDeviation = 0.0;
+    for (var i = 0; i < 4; i++) {
+      final prev = quad[(i + 3) % 4];
+      final curr = quad[i];
+      final next = quad[(i + 1) % 4];
+      final v1x = prev.x - curr.x, v1y = prev.y - curr.y;
+      final v2x = next.x - curr.x, v2y = next.y - curr.y;
+      final mag1 = sqrt(v1x * v1x + v1y * v1y);
+      final mag2 = sqrt(v2x * v2x + v2y * v2y);
+      if (mag1 < 1e-6 || mag2 < 1e-6) {
+        totalDeviation += 90;
+        continue;
+      }
+      final cosAngle = ((v1x * v2x + v1y * v2y) / (mag1 * mag2)).clamp(-1.0, 1.0);
+      final angleDeg = acos(cosAngle) * 180 / pi;
+      totalDeviation += (angleDeg - 90).abs();
+    }
+    final avgDeviation = totalDeviation / 4;
+    return (1 - (avgDeviation / 45)).clamp(0.0, 1.0);
   }
 
   /// Standard sum/difference trick:

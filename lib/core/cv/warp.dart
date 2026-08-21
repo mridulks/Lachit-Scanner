@@ -77,16 +77,7 @@ class ImageWarper {
   /// owns and must dispose the returned Mat (and [src]).
   static cv.Mat warpMatToQuadFlat(cv.Mat src, List<Point<double>> corners) {
     final tl = corners[0], tr = corners[1], br = corners[2], bl = corners[3];
-
-    // Output size = max of the two width/height estimates, so we don't
-    // upsample past the source resolution unnecessarily.
-    final widthTop = _dist(tl, tr);
-    final widthBottom = _dist(bl, br);
-    final heightLeft = _dist(tl, bl);
-    final heightRight = _dist(tr, br);
-
-    final outW = max(widthTop, widthBottom).round();
-    final outH = max(heightLeft, heightRight).round();
+    final (outW, outH) = outputSizeForQuad(corners);
 
     final srcPts = cv.VecPoint2f.fromList([
       cv.Point2f(tl.x, tl.y),
@@ -111,6 +102,20 @@ class ImageWarper {
     } finally {
       m.dispose();
     }
+  }
+
+  /// Output rectangle size for warping [corners] (TL,TR,BR,BL) flat — the
+  /// max of the two width/height estimates, so we don't upsample past the
+  /// source resolution unnecessarily.
+  static (int, int) outputSizeForQuad(List<Point<double>> corners) {
+    final tl = corners[0], tr = corners[1], br = corners[2], bl = corners[3];
+    final widthTop = _dist(tl, tr);
+    final widthBottom = _dist(bl, br);
+    final heightLeft = _dist(tl, bl);
+    final heightRight = _dist(tr, br);
+    final outW = max(widthTop, widthBottom).round();
+    final outH = max(heightLeft, heightRight).round();
+    return (outW, outH);
   }
 
   /// Encodes [mat] to JPEG and wraps it with its dimensions. Does NOT
