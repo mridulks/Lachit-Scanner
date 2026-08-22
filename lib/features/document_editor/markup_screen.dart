@@ -1,0 +1,737 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
+
+import '../../models/page.dart';
+
+enum _MarkupTool { pen, highlighter, redaction, text, signature, stamp }
+
+const _penColors = [
+  Colors.red,
+  Colors.blue,
+  Colors.green,
+  Colors.black,
+  Colors.orange,
+  Colors.purple,
+];
+
+String _colorName(Color color) {
+  if (color == Colors.red) return 'Red';
+  if (color == Colors.blue) return 'Blue';
+  if (color == Colors.green) return 'Green';
+  if (color == Colors.black) return 'Black';
+  if (color == Colors.orange) return 'Orange';
+  return 'Purple';
+}
+
+class MarkupScreen extends StatefulWidget {
+  final ScanPage page;
+
+  const MarkupScreen({super.key, required this.page});
+
+  @override
+  State<MarkupScreen> createState() => _MarkupScreenState();
+}
+
+class _MarkupLabel {
+  final String text;
+  final Offset position;
+
+  const _MarkupLabel(this.text, this.position);
+}
+
+class _MarkupSignature {
+  final List<Offset> points;
+  Offset position;
+
+  _MarkupSignature(this.points, this.position);
+}
+
+class _MarkupStamp {
+  final String text;
+  Offset position;
+
+  _MarkupStamp(this.text, this.position);
+}
+
+class _MarkupStroke {
+  final List<Offset> points;
+  final Color color;
+  final double width;
+  final bool translucent;
+
+  const _MarkupStroke({
+    required this.points,
+    required this.color,
+    required this.width,
+    required this.translucent,
+  });
+}
+
+class _MarkupScreenState extends State<MarkupScreen> {
+  static final List<List<Offset>> _savedSignatures = [];
+  final GlobalKey _canvasKey = GlobalKey();
+  final List<_MarkupStroke> _strokes = [];
+  final List<Rect> _redactions = [];
+  final List<_MarkupLabel> _labels = [];
+  final List<_MarkupSignature> _signatures = [];
+  final List<_MarkupStamp> _stamps = [];
+  Uint8List? _bytes;
+  _MarkupTool _tool = _MarkupTool.pen;
+  Color _penColor = Colors.red;
+  List<Offset> _activeStroke = [];
+  Offset? _dragStart;
+  Rect? _activeRedaction;
+  bool _saving = false;
+  int _draggingSignature = -1;
+  int _draggingStamp = -1;
+  Offset? _lastAnnotationPoint;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final bytes = await File(widget.page.imagePath).readAsBytes();
+    if (mounted) setState(() => _bytes = bytes);
+  }
+
+  void _startGesture(Offset point) {
+    _draggingSignature = _signatureAt(point);
+    _draggingStamp = _draggingSignature == -1 ? _stampAt(point) : -1;
+    if (_draggingSignature >= 0 || _draggingStamp >= 0) {
+      _lastAnnotationPoint = point;
+      return;
+    }
+    if (_tool == _MarkupTool.text) {
+      _addText(point);
+    } else if (_tool == _MarkupTool.signature) {
+      _addSignature(point);
+    } else if (_tool == _MarkupTool.stamp) {
+      _addStamp(point);
+    } else if (_tool == _MarkupTool.redaction) {
+      _dragStart = point;
+      setState(() => _activeRedaction = Rect.fromPoints(point, point));
+    } else {
+      setState(() => _activeStroke = [point]);
+    }
+  }
+
+  void _updateGesture(Offset point) {
+    if (_lastAnnotationPoint != null) {
+      final delta = point - _lastAnnotationPoint!;
+      setState(() {
+        if (_draggingSignature >= 0) {
+          _signatures[_draggingSignature].position += delta;
+        } else if (_draggingStamp >= 0) {
+          _stamps[_draggingStamp].position += delta;
+        }
+      });
+      _lastAnnotationPoint = point;
+      return;
+    }
+    if (_tool == _MarkupTool.redaction && _dragStart != null) {
+      setState(() => _activeRedaction = Rect.fromPoints(_dragStart!, point));
+    } else if (_tool != _MarkupTool.text &&
+        _tool != _MarkupTool.signature &&
+        _tool != _MarkupTool.stamp) {
+      setState(() => _activeStroke = [..._activeStroke, point]);
+    }
+  }
+
+  void _endGesture() {
+    if (_lastAnnotationPoint != null) {
+      _draggingSignature = -1;
+      _draggingStamp = -1;
+      _lastAnnotationPoint = null;
+      return;
+    }
+    if (_tool == _MarkupTool.redaction) {
+      final redaction = _activeRedaction;
+      if (redaction != null && redaction.width > 4 && redaction.height > 4) {
+        _redactions.add(redaction);
+      }
+      setState(() {
+        _activeRedaction = null;
+        _dragStart = null;
+      });
+    } else if (_tool != _MarkupTool.text &&
+        _tool != _MarkupTool.signature &&
+        _tool != _MarkupTool.stamp &&
+        _activeStroke.length > 1) {
+      final color =
+          _tool == _MarkupTool.highlighter ? Colors.yellow : _penColor;
+      setState(() {
+        _strokes.add(
+          _MarkupStroke(
+            points: List.of(_activeStroke),
+            color: color,
+            width: _tool == _MarkupTool.highlighter ? 18 : 4,
+            translucent: _tool == _MarkupTool.highlighter,
+          ),
+        );
+        _activeStroke = [];
+      });
+    }
+  }
+
+  Future<void> _addText(Offset position) async {
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add text'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(hintText: 'Type your note'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (text != null && text.isNotEmpty && mounted) {
+      setState(() => _labels.add(_MarkupLabel(text, position)));
+    }
+    controller.dispose();
+  }
+
+  Future<void> _addSignature(Offset position) async {
+    List<Offset>? points;
+    if (_savedSignatures.isNotEmpty) {
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (context) => _SignatureChoiceDialog(
+          signatures: _savedSignatures,
+        ),
+      );
+      if (selected == null) return;
+      points = selected >= 0
+          ? List.of(_savedSignatures[selected])
+          : await _captureSignature();
+    } else {
+      points = await _captureSignature();
+    }
+    final selectedPoints = points;
+    if (selectedPoints != null && selectedPoints.length > 1 && mounted) {
+      setState(
+        () => _signatures.add(_MarkupSignature(selectedPoints, position)),
+      );
+    }
+  }
+
+  Future<List<Offset>?> _captureSignature() async {
+    final points = await showDialog<List<Offset>>(
+      context: context,
+      builder: (context) => const _SignatureDialog(),
+    );
+    if (points != null && points.length > 1) {
+      _savedSignatures.add(List.of(points));
+    }
+    return points;
+  }
+
+  int _signatureAt(Offset point) {
+    for (var index = _signatures.length - 1; index >= 0; index--) {
+      final points = _signatures[index].points;
+      final bounds = _bounds(points).shift(_signatures[index].position);
+      if (bounds.inflate(12).contains(point)) return index;
+    }
+    return -1;
+  }
+
+  int _stampAt(Offset point) {
+    for (var index = _stamps.length - 1; index >= 0; index--) {
+      if ((_stamps[index].position & const Size(220, 42))
+          .inflate(8)
+          .contains(point)) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  Rect _bounds(List<Offset> points) {
+    var left = points.first.dx;
+    var top = points.first.dy;
+    var right = left;
+    var bottom = top;
+    for (final point in points.skip(1)) {
+      left = left < point.dx ? left : point.dx;
+      top = top < point.dy ? top : point.dy;
+      right = right > point.dx ? right : point.dx;
+      bottom = bottom > point.dy ? bottom : point.dy;
+    }
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  Future<void> _addStamp(Offset position) async {
+    final stamp = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            for (final value in [
+              'APPROVED',
+              'CONFIDENTIAL',
+              'DATE ${_dateStamp()}',
+            ])
+              ListTile(
+                leading: const Icon(Icons.verified_outlined),
+                title: Text(value),
+                onTap: () => Navigator.pop(context, value),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (stamp != null && mounted) {
+      setState(() => _stamps.add(_MarkupStamp(stamp, position)));
+    }
+  }
+
+  String _dateStamp() {
+    final date = DateTime.now();
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  void _undo() {
+    setState(() {
+      if (_labels.isNotEmpty && _tool == _MarkupTool.text) {
+        _labels.removeLast();
+      } else if (_signatures.isNotEmpty && _tool == _MarkupTool.signature) {
+        _signatures.removeLast();
+      } else if (_stamps.isNotEmpty && _tool == _MarkupTool.stamp) {
+        _stamps.removeLast();
+      } else if (_redactions.isNotEmpty && _tool == _MarkupTool.redaction) {
+        _redactions.removeLast();
+      } else if (_strokes.isNotEmpty) {
+        _strokes.removeLast();
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (_bytes == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final canvasBox =
+          _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+      final canvasSize = canvasBox?.size;
+      if (canvasSize == null || canvasSize.isEmpty) {
+        throw StateError('Markup canvas is not ready.');
+      }
+      final codec = await ui.instantiateImageCodec(_bytes!);
+      final frame = await codec.getNextFrame();
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final scaleX = frame.image.width / canvasSize.width;
+      final scaleY = frame.image.height / canvasSize.height;
+      canvas.drawImage(frame.image, Offset.zero, Paint());
+      canvas.scale(scaleX, scaleY);
+      _MarkupPainter(
+        strokes: _strokes,
+        activeStroke: _activeStroke,
+        activeStrokeColor: _penColor,
+        redactions: _redactions,
+        labels: _labels,
+        signatures: _signatures,
+        stamps: _stamps,
+      ).paint(canvas, canvasSize);
+      final picture = recorder.endRecording();
+      final image =
+          await picture.toImage(frame.image.width, frame.image.height);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) throw StateError('Could not render markup.');
+      final rendered = img.decodeImage(data.buffer.asUint8List());
+      if (rendered == null) throw StateError('Could not encode markup.');
+      final oldFile = File(widget.page.imagePath);
+      final outputPath =
+          '${oldFile.parent.path}/marked_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(outputPath).writeAsBytes(img.encodeJpg(rendered, quality: 95));
+      widget.page.imagePath = outputPath;
+      await widget.page.save();
+      if (await oldFile.exists() && oldFile.path != outputPath) {
+        await oldFile.delete();
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Markup save failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    final decoded = bytes == null ? null : img.decodeImage(bytes);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Markup'),
+        actions: [
+          IconButton(
+            onPressed: _strokes.isEmpty &&
+                    _redactions.isEmpty &&
+                    _labels.isEmpty &&
+                    _signatures.isEmpty &&
+                    _stamps.isEmpty
+                ? null
+                : _undo,
+            icon: const Icon(Icons.undo),
+            tooltip: 'Undo',
+          ),
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: bytes == null
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: RepaintBoundary(
+                key: _canvasKey,
+                child: AspectRatio(
+                  aspectRatio:
+                      decoded == null ? 0.72 : decoded.width / decoded.height,
+                  child: GestureDetector(
+                    onPanStart: (details) =>
+                        _startGesture(details.localPosition),
+                    onPanUpdate: (details) =>
+                        _updateGesture(details.localPosition),
+                    onPanEnd: (_) => _endGesture(),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(bytes, fit: BoxFit.contain),
+                        CustomPaint(
+                          painter: _MarkupPainter(
+                            strokes: _strokes,
+                            activeStroke: _activeStroke,
+                            activeStrokeColor: _penColor,
+                            redactions: [
+                              ..._redactions,
+                              if (_activeRedaction != null) _activeRedaction!,
+                            ],
+                            labels: _labels,
+                            signatures: _signatures,
+                            stamps: _stamps,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (final entry in [
+                (_MarkupTool.pen, Icons.edit, 'Pen'),
+                (_MarkupTool.highlighter, Icons.highlight, 'Highlight'),
+                (_MarkupTool.redaction, Icons.block, 'Redact'),
+                (_MarkupTool.text, Icons.text_fields, 'Text'),
+                (_MarkupTool.signature, Icons.draw, 'Signature'),
+                (_MarkupTool.stamp, Icons.verified_outlined, 'Stamp'),
+              ])
+                IconButton(
+                  onPressed: () => setState(() => _tool = entry.$1),
+                  tooltip: entry.$3,
+                  icon: Icon(
+                    entry.$2,
+                    color: _tool == entry.$1
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                ),
+              PopupMenuButton<Color>(
+                tooltip: 'Pen color',
+                enabled: _tool == _MarkupTool.pen,
+                onSelected: (color) => setState(() => _penColor = color),
+                icon: Icon(Icons.palette, color: _penColor),
+                itemBuilder: (context) => [
+                  for (final color in _penColors)
+                    PopupMenuItem<Color>(
+                      value: color,
+                      child: Row(
+                        children: [
+                          Icon(Icons.circle, color: color),
+                          const SizedBox(width: 12),
+                          Text(_colorName(color)),
+                          const Spacer(),
+                          if (_penColor == color) const Icon(Icons.check),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MarkupPainter extends CustomPainter {
+  final List<_MarkupStroke> strokes;
+  final List<Offset> activeStroke;
+  final Color activeStrokeColor;
+  final List<Rect> redactions;
+  final List<_MarkupLabel> labels;
+  final List<_MarkupSignature> signatures;
+  final List<_MarkupStamp> stamps;
+
+  const _MarkupPainter({
+    required this.strokes,
+    required this.activeStroke,
+    required this.activeStrokeColor,
+    required this.redactions,
+    required this.labels,
+    required this.signatures,
+    required this.stamps,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final stroke in strokes) {
+      _drawStroke(canvas, stroke.points, stroke);
+    }
+    if (activeStroke.length > 1) {
+      _drawStroke(
+        canvas,
+        activeStroke,
+        _MarkupStroke(
+          points: activeStroke,
+          color: activeStrokeColor,
+          width: 4,
+          translucent: false,
+        ),
+      );
+    }
+    for (final rect in redactions) {
+      canvas.drawRect(rect, Paint()..color = Colors.black);
+    }
+    for (final label in labels) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label.text,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            backgroundColor: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width * 0.75);
+      painter.paint(canvas, label.position);
+    }
+    for (final signature in signatures) {
+      final translated =
+          signature.points.map((point) => point + signature.position).toList();
+      _drawStroke(
+        canvas,
+        translated,
+        const _MarkupStroke(
+          points: [],
+          color: Colors.black,
+          width: 3,
+          translucent: false,
+        ),
+      );
+    }
+    for (final stamp in stamps) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: stamp.text,
+          style: const TextStyle(
+            color: Colors.red,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final rect =
+          stamp.position & Size(painter.width + 16, painter.height + 10);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+        Paint()
+          ..color = Colors.red.withValues(alpha: 0.08)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+        Paint()
+          ..color = Colors.red
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      painter.paint(canvas, stamp.position + const Offset(8, 5));
+    }
+  }
+
+  void _drawStroke(Canvas canvas, List<Offset> points, _MarkupStroke stroke) {
+    final path = Path();
+    var hasPoint = false;
+    for (final point in points) {
+      if (!point.isFinite) {
+        hasPoint = false;
+      } else if (!hasPoint) {
+        path.moveTo(point.dx, point.dy);
+        hasPoint = true;
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = stroke.color.withValues(alpha: stroke.translucent ? 0.45 : 1)
+        ..strokeWidth = stroke.width
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MarkupPainter oldDelegate) => true;
+}
+
+class _SignatureDialog extends StatefulWidget {
+  const _SignatureDialog();
+
+  @override
+  State<_SignatureDialog> createState() => _SignatureDialogState();
+}
+
+class _SignatureChoiceDialog extends StatelessWidget {
+  final List<List<Offset>> signatures;
+
+  const _SignatureChoiceDialog({required this.signatures});
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Choose signature'),
+      children: [
+        for (var index = 0; index < signatures.length; index++)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, index),
+            child: SizedBox(
+              height: 54,
+              child: CustomPaint(
+                painter: _SignaturePainter(signatures[index]),
+              ),
+            ),
+          ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, -1),
+          child: const ListTile(
+            leading: Icon(Icons.add),
+            title: Text('Create new signature'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignatureDialogState extends State<_SignatureDialog> {
+  final List<Offset> _points = [];
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Draw signature'),
+      content: SizedBox(
+        width: 300,
+        height: 150,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.black26),
+          ),
+          child: GestureDetector(
+            onPanStart: (details) =>
+                setState(() => _points.add(details.localPosition)),
+            onPanUpdate: (details) =>
+                setState(() => _points.add(details.localPosition)),
+            onPanEnd: (_) => setState(() => _points.add(Offset.infinite)),
+            child: CustomPaint(
+              painter: _SignaturePainter(_points),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => setState(_points.clear),
+          child: const Text('Clear'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _points.isEmpty
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    _points.where((point) => point != Offset.infinite).toList(),
+                  ),
+          child: const Text('Use signature'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignaturePainter extends CustomPainter {
+  final List<Offset> points;
+
+  const _SignaturePainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    for (var index = 1; index < points.length; index++) {
+      final start = points[index - 1];
+      final end = points[index];
+      if (start.isFinite && end.isFinite) canvas.drawLine(start, end, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SignaturePainter oldDelegate) => true;
+}
