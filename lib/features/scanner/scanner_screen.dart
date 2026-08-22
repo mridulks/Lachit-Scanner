@@ -37,6 +37,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
   CameraController? _controller;
   Future<void>? _initFuture;
   bool _capturing = false;
+  bool _changingFlash = false;
+  FlashMode _flashMode = FlashMode.auto;
   String? _error;
 
   @override
@@ -60,6 +62,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
       );
       _initFuture = _controller!.initialize();
       await _initFuture;
+      try {
+        await _controller!.setFlashMode(_flashMode);
+      } catch (_) {
+        // Some cameras do not expose a flash; the preview remains usable.
+      }
       if (mounted) setState(() {});
     } catch (e) {
       setState(() => _error = 'Camera unavailable: $e');
@@ -67,7 +74,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _capture() async {
-    if (_controller == null || _capturing) return;
+    if (_controller == null || _capturing || _changingFlash) return;
     setState(() => _capturing = true);
     try {
       final file = await _controller!.takePicture();
@@ -88,6 +95,50 @@ class _ScannerScreenState extends State<ScannerScreen> {
       }
     } finally {
       if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  Future<void> _setFlashMode(FlashMode mode) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    setState(() => _changingFlash = true);
+    try {
+      await controller.setFlashMode(mode);
+      if (mounted) setState(() => _flashMode = mode);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Flash unavailable: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingFlash = false);
+    }
+  }
+
+  String _flashLabel(FlashMode mode) {
+    switch (mode) {
+      case FlashMode.off:
+        return 'Off';
+      case FlashMode.auto:
+        return 'Auto';
+      case FlashMode.always:
+        return 'On';
+      case FlashMode.torch:
+        return 'Torch';
+    }
+  }
+
+  IconData _flashIcon(FlashMode mode) {
+    switch (mode) {
+      case FlashMode.off:
+        return Icons.flash_off_outlined;
+      case FlashMode.auto:
+        return Icons.flash_auto_outlined;
+      case FlashMode.always:
+        return Icons.flash_on_outlined;
+      case FlashMode.torch:
+        return Icons.highlight;
     }
   }
 
@@ -128,6 +179,46 @@ class _ScannerScreenState extends State<ScannerScreen> {
             fit: StackFit.expand,
             children: [
               CameraPreview(_controller!),
+              SafeArea(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: PopupMenuButton<FlashMode>(
+                      tooltip: 'Flash: ${_flashLabel(_flashMode)}',
+                      enabled: !_capturing && !_changingFlash,
+                      onSelected: _setFlashMode,
+                      icon: Icon(_flashIcon(_flashMode)),
+                      color: Colors.black.withValues(alpha: 0.92),
+                      itemBuilder: (context) => [
+                        for (final mode in FlashMode.values)
+                          PopupMenuItem<FlashMode>(
+                            value: mode,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _flashIcon(mode),
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  _flashLabel(mode),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                const Spacer(),
+                                if (_flashMode == mode)
+                                  const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               // Simple framing guide — real-time quad overlay arrives in
               // Phase 2 alongside the frame-stream detector. Book Mode
               // gets a wider box, matching an open spread's aspect ratio.
