@@ -7,7 +7,7 @@ import 'package:image/image.dart' as img;
 
 import '../../models/page.dart';
 
-enum _MarkupTool { pen, highlighter, redaction, text, signature, stamp }
+enum _MarkupTool { pen, highlighter, redaction, text, signature, stamp, eraser }
 
 const _penColors = [
   Colors.red,
@@ -102,6 +102,10 @@ class _MarkupScreenState extends State<MarkupScreen> {
   }
 
   void _startGesture(Offset point) {
+    if (_tool == _MarkupTool.eraser) {
+      _eraseAt(point);
+      return;
+    }
     _draggingSignature = _signatureAt(point);
     _draggingStamp = _draggingSignature == -1 ? _stampAt(point) : -1;
     if (_draggingSignature >= 0 || _draggingStamp >= 0) {
@@ -123,6 +127,10 @@ class _MarkupScreenState extends State<MarkupScreen> {
   }
 
   void _updateGesture(Offset point) {
+    if (_tool == _MarkupTool.eraser) {
+      _eraseAt(point);
+      return;
+    }
     if (_lastAnnotationPoint != null) {
       final delta = point - _lastAnnotationPoint!;
       setState(() {
@@ -139,8 +147,51 @@ class _MarkupScreenState extends State<MarkupScreen> {
       setState(() => _activeRedaction = Rect.fromPoints(_dragStart!, point));
     } else if (_tool != _MarkupTool.text &&
         _tool != _MarkupTool.signature &&
-        _tool != _MarkupTool.stamp) {
+        _tool != _MarkupTool.stamp &&
+        _tool != _MarkupTool.eraser) {
       setState(() => _activeStroke = [..._activeStroke, point]);
+    }
+  }
+
+  void _eraseAt(Offset point) {
+    for (var index = _signatures.length - 1; index >= 0; index--) {
+      final bounds =
+          _bounds(_signatures[index].points).shift(_signatures[index].position);
+      if (bounds.inflate(16).contains(point)) {
+        setState(() => _signatures.removeAt(index));
+        return;
+      }
+    }
+    for (var index = _stamps.length - 1; index >= 0; index--) {
+      if ((_stamps[index].position & const Size(220, 42))
+          .inflate(12)
+          .contains(point)) {
+        setState(() => _stamps.removeAt(index));
+        return;
+      }
+    }
+    for (var index = _labels.length - 1; index >= 0; index--) {
+      if ((_labels[index].position & const Size(220, 54))
+          .inflate(12)
+          .contains(point)) {
+        setState(() => _labels.removeAt(index));
+        return;
+      }
+    }
+    for (var index = _redactions.length - 1; index >= 0; index--) {
+      if (_redactions[index].inflate(12).contains(point)) {
+        setState(() => _redactions.removeAt(index));
+        return;
+      }
+    }
+    for (var index = _strokes.length - 1; index >= 0; index--) {
+      if (_strokes[index].points.any(
+            (strokePoint) =>
+                (strokePoint - point).distance <= _strokes[index].width + 14,
+          )) {
+        setState(() => _strokes.removeAt(index));
+        return;
+      }
     }
   }
 
@@ -163,6 +214,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
     } else if (_tool != _MarkupTool.text &&
         _tool != _MarkupTool.signature &&
         _tool != _MarkupTool.stamp &&
+        _tool != _MarkupTool.eraser &&
         _activeStroke.length > 1) {
       final color =
           _tool == _MarkupTool.highlighter ? Colors.yellow : _penColor;
@@ -288,6 +340,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
             for (final value in [
               'APPROVED',
               'CONFIDENTIAL',
+              'RECEIVED'
               'DATE ${_dateStamp()}',
             ])
               ListTile(
@@ -448,8 +501,11 @@ class _MarkupScreenState extends State<MarkupScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 2,
+            runSpacing: 2,
             children: [
               for (final entry in [
                 (_MarkupTool.pen, Icons.edit, 'Pen'),
@@ -458,6 +514,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
                 (_MarkupTool.text, Icons.text_fields, 'Text'),
                 (_MarkupTool.signature, Icons.draw, 'Signature'),
                 (_MarkupTool.stamp, Icons.verified_outlined, 'Stamp'),
+                (_MarkupTool.eraser, Icons.auto_fix_high, 'Eraser'),
               ])
                 IconButton(
                   onPressed: () => setState(() => _tool = entry.$1),
