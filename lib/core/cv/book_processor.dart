@@ -96,7 +96,7 @@ class BookProcessor {
       final h = spread.height.toDouble();
 
       final leftQuad = [
-        Point(0.0, 0.0),
+        const Point(0.0, 0.0),
         Point(gutter.xAt(0), 0.0),
         Point(gutter.xAt(h), h),
         Point(0.0, h),

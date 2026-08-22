@@ -5,10 +5,8 @@
 // — 8 handles total. This is the essential fallback for dark book covers,
 // low-contrast pages on white desks, etc.
 //
-// Book Mode: this screen only handles the OUTER spread boundary. The
-// gutter (spine) is marked on a separate screen, AFTER flattening — see
-// GutterAdjustScreen's doc comment for why marking it here (on the raw,
-// still-perspective-distorted photo) was dropped.
+// Book Mode also exposes a gutter guide here. It is stored in flattened
+// spread coordinates and projected onto the raw photo for editing.
 
 import 'dart:io';
 import 'dart:math';
@@ -27,15 +25,16 @@ import '../../core/providers.dart';
 import '../../core/scan_kind.dart';
 import '../../models/page.dart' as model;
 import '../document_editor/document_editor_screen.dart';
-import '../gutter_adjust/gutter_adjust_screen.dart';
 
 class CornerAdjustScreen extends ConsumerStatefulWidget {
   final String capturedImagePath;
   final ScanKind scanKind;
+  final BookScanMode bookScanMode;
   const CornerAdjustScreen({
     super.key,
     required this.capturedImagePath,
     this.scanKind = ScanKind.document,
+    this.bookScanMode = BookScanMode.twoPage,
   });
 
   @override
@@ -56,6 +55,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   Uint8List? _bytes;
   ui.Image? _decoded;
   List<Point<double>>? _corners; // in IMAGE pixel space
+  GutterPath? _gutter; // in flattened spread pixel space
   bool _detecting = true;
   bool _saving = false;
 
@@ -64,9 +64,9 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   // that edge's corners together.
   int _draggingIndex = -1;
   Point<double>? _lastDragImagePoint; // for delta-based edge translation
+  int _draggingGutterIndex = -1;
 
-  model.ColorMode _colorMode =
-      model.ColorMode.bw; // default, matches ScanPage's own default
+  model.ColorMode _colorMode = model.ColorMode.grayscale;
 
   // Screen<->image coordinate mapping, computed on layout.
   double _scale = 1;
@@ -113,6 +113,13 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
             frame.image.width.toDouble(),
             frame.image.height.toDouble(),
           );
+      final (rawWidth, rawHeight) = ImageWarper.outputSizeForQuad(_corners!);
+      final spreadWidth = rawHeight > rawWidth ? rawHeight : rawWidth;
+      final spreadHeight = rawHeight > rawWidth ? rawWidth : rawHeight;
+      _gutter = GutterPath.centered(
+        width: spreadWidth.toDouble(),
+        height: spreadHeight.toDouble(),
+      );
       _detecting = false;
     });
   }
@@ -150,29 +157,80 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
     ];
   }
 
-  List<Point<double>> _centerGutterGuide() {
+  Point<double> _lerpPoint(
+    Point<double> a,
+    Point<double> b,
+    double amount,
+  ) =>
+      Point(
+        a.x + (b.x - a.x) * amount,
+        a.y + (b.y - a.y) * amount,
+      );
+
+  (double, double) _gutterSize() {
     final c = _corners!;
     final (width, height) = ImageWarper.outputSizeForQuad(c);
-    // This preview is drawn in the original camera image, before
-    // BookProcessor normalises a portrait spread into landscape. Its guide
-    // must therefore follow the source orientation: portrait photo => the
-    // two pages are stacked and the gutter is horizontal.
-    if (height > width) {
-      final left = Point((c[0].x + c[3].x) / 2, (c[0].y + c[3].y) / 2);
-      final right = Point((c[1].x + c[2].x) / 2, (c[1].y + c[2].y) / 2);
-      return [
-        left,
-        Point((left.x + right.x) / 2, (left.y + right.y) / 2),
-        right,
-      ];
+    return height > width
+        ? (height.toDouble(), width.toDouble())
+        : (width.toDouble(), height.toDouble());
+  }
+
+  Point<double> _gutterPointInImage(Point<double> point) {
+    final c = _corners!;
+    final (rawWidth, rawHeight) = ImageWarper.outputSizeForQuad(c);
+    final rotated = rawHeight > rawWidth;
+    final u = point.x / _gutterSize().$1;
+    final v = point.y / _gutterSize().$2;
+    final sourceU = rotated ? 1 - v : u;
+    final sourceV = rotated ? u : v;
+    return _lerpPoint(
+      _lerpPoint(c[0], c[1], sourceU),
+      _lerpPoint(c[3], c[2], sourceU),
+      sourceV,
+    );
+  }
+
+  List<Point<double>> _gutterImagePoints() =>
+      _gutter?.points.map(_gutterPointInImage).toList() ?? const [];
+
+  int? _hitTestGutter(Offset screenPos) {
+    const hitRadius = 28.0;
+    final points = _gutterImagePoints();
+    for (var i = 0; i < points.length; i++) {
+      if ((_imageToScreen(points[i]) - screenPos).distance <= hitRadius) {
+        return i;
+      }
     }
-    final top = Point((c[0].x + c[1].x) / 2, (c[0].y + c[1].y) / 2);
-    final bottom = Point((c[3].x + c[2].x) / 2, (c[3].y + c[2].y) / 2);
-    return [
-      top,
-      Point((top.x + bottom.x) / 2, (top.y + bottom.y) / 2),
-      bottom,
-    ];
+    return null;
+  }
+
+  void _updateGutter(Offset screenPosition) {
+    if (_gutter == null || _corners == null) return;
+    final imagePoint = _screenToImage(screenPosition);
+    final control = _gutter!.points[_draggingGutterIndex];
+    final (width, height) = _gutterSize();
+    final c = _corners!;
+    final (rawWidth, rawHeight) = ImageWarper.outputSizeForQuad(c);
+    final rotated = rawHeight > rawWidth;
+    final fixed = rotated ? 1 - control.y / height : control.y / height;
+    final first =
+        rotated ? _lerpPoint(c[0], c[1], fixed) : _lerpPoint(c[0], c[3], fixed);
+    final second =
+        rotated ? _lerpPoint(c[3], c[2], fixed) : _lerpPoint(c[1], c[2], fixed);
+    final dx = second.x - first.x;
+    final dy = second.y - first.y;
+    final denominator = dx * dx + dy * dy;
+    if (denominator == 0) return;
+    final along =
+        ((imagePoint.x - first.x) * dx + (imagePoint.y - first.y) * dy) /
+            denominator;
+    final x = (along.clamp(0.0, 1.0) * width).toDouble();
+    setState(() {
+      _gutter = _gutter!.withPoint(
+        _draggingGutterIndex,
+        Point(x, control.y),
+      );
+    });
   }
 
   int? _hitTestHandle(Offset screenPos) {
@@ -203,9 +261,32 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
       ref.read(activeDocumentProvider.notifier).state = doc;
 
       if (widget.scanKind == ScanKind.book) {
-        // Flatten the outer boundary now; the gutter gets marked on the
-        // NEXT screen, directly on this flattened result — see
-        // GutterAdjustScreen.
+        if (widget.bookScanMode == BookScanMode.singlePage) {
+          final result = ImageWarper.warpAndEnhance(
+            imageBytes: _bytes!,
+            corners: _corners!,
+            colorMode: _colorMode,
+          );
+          final docDir = await storage.documentDir(doc.id);
+          final pageId = storage.newId();
+          final outPath = '${docDir.path}/$pageId.jpg';
+          await File(outPath).writeAsBytes(result.jpegBytes);
+          await storage.addPage(
+            doc,
+            imagePath: outPath,
+            sourceMode: model.PageSourceMode.bookLeft,
+            colorMode: _colorMode,
+          );
+          ref.read(documentVersionProvider.notifier).state++;
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => DocumentEditorScreen(documentId: doc!.id),
+            ),
+            (route) => route.isFirst,
+          );
+          return;
+        }
         final spread = BookProcessor.flattenSpread(
           imageBytes: _bytes!,
           outerCorners: _corners!,
@@ -213,10 +294,11 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
         if (useCenteredGutter) {
           final split = BookProcessor.splitAndWarpPath(
             spread: spread,
-            gutter: GutterPath.centered(
-              width: spread.width.toDouble(),
-              height: spread.height.toDouble(),
-            ),
+            gutter: _gutter ??
+                GutterPath.centered(
+                  width: spread.width.toDouble(),
+                  height: spread.height.toDouble(),
+                ),
             colorMode: _colorMode,
           );
           final docDir = await storage.documentDir(doc.id);
@@ -250,14 +332,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
           );
           return;
         }
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) =>
-                GutterAdjustScreen(spread: spread, colorMode: _colorMode),
-          ),
-        );
-        return; // GutterAdjustScreen owns saving + navigating onward
+        return;
       }
 
       final docDir = await storage.documentDir(doc.id);
@@ -312,12 +387,25 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                 );
                 return GestureDetector(
                   onPanStart: (d) {
+                    final gutterIndex = widget.scanKind == ScanKind.book &&
+                            widget.bookScanMode == BookScanMode.twoPage
+                        ? _hitTestGutter(d.localPosition)
+                        : null;
+                    if (gutterIndex != null) {
+                      _draggingGutterIndex = gutterIndex;
+                      _draggingIndex = -1;
+                      return;
+                    }
                     final idx = _hitTestHandle(d.localPosition) ?? -1;
                     _draggingIndex = idx;
                     _lastDragImagePoint =
                         idx == -1 ? null : _screenToImage(d.localPosition);
                   },
                   onPanUpdate: (d) {
+                    if (_draggingGutterIndex >= 0) {
+                      _updateGutter(d.localPosition);
+                      return;
+                    }
                     if (_draggingIndex == -1) return;
                     final newPoint = _screenToImage(d.localPosition);
                     setState(() {
@@ -341,6 +429,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                   },
                   onPanEnd: (_) {
                     _draggingIndex = -1;
+                    _draggingGutterIndex = -1;
                     _lastDragImagePoint = null;
                   },
                   child: CustomPaint(
@@ -350,8 +439,9 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                       corners: _corners!.map(_imageToScreen).toList(),
                       edgeMidpoints:
                           _edgeMidpoints().map(_imageToScreen).toList(),
-                      centerGuide: widget.scanKind == ScanKind.book
-                          ? _centerGutterGuide().map(_imageToScreen).toList()
+                      gutter: widget.scanKind == ScanKind.book &&
+                              widget.bookScanMode == BookScanMode.twoPage
+                          ? _gutterImagePoints().map(_imageToScreen).toList()
                           : null,
                     ),
                   ),
@@ -388,11 +478,12 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              if (widget.scanKind == ScanKind.book)
+              if (widget.scanKind == ScanKind.book &&
+                  widget.bookScanMode == BookScanMode.twoPage)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
                   child: Text(
-                    'The centre guide is the default gutter. Split now, or review the gutter to fine-tune it.',
+                    'Drag the gutter points if needed, then split the spread.',
                     style: TextStyle(color: Colors.white70, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
@@ -408,7 +499,13 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      onPressed: _saving ? null : () => _confirm(),
+                      onPressed: _saving
+                          ? null
+                          : () => _confirm(
+                                useCenteredGutter: widget.scanKind ==
+                                        ScanKind.book &&
+                                    widget.bookScanMode == BookScanMode.twoPage,
+                              ),
                       child: _saving
                           ? const SizedBox(
                               width: 20,
@@ -417,20 +514,16 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
                             )
                           : Text(
                               widget.scanKind == ScanKind.book
-                                  ? 'Review gutter'
+                                  ? widget.bookScanMode ==
+                                          BookScanMode.singlePage
+                                      ? 'Save'
+                                      : 'Split at centre'
                                   : 'Use this',
                             ),
                     ),
                   ),
                 ],
               ),
-              if (widget.scanKind == ScanKind.book)
-                TextButton.icon(
-                  onPressed:
-                      _saving ? null : () => _confirm(useCenteredGutter: true),
-                  icon: const Icon(Icons.call_split),
-                  label: const Text('Split using centre guide'),
-                ),
             ],
           ),
         ),
@@ -443,13 +536,13 @@ class _QuadPainter extends CustomPainter {
   final ui.Image image;
   final List<Offset> corners; // screen space, TL,TR,BR,BL
   final List<Offset> edgeMidpoints; // screen space, top/right/bottom/left
-  final List<Offset>? centerGuide;
+  final List<Offset>? gutter;
 
   _QuadPainter({
     required this.image,
     required this.corners,
     required this.edgeMidpoints,
-    this.centerGuide,
+    this.gutter,
   });
 
   @override
@@ -488,23 +581,28 @@ class _QuadPainter extends CustomPainter {
     canvas.drawPath(path, fillPaint);
     canvas.drawPath(path, quadPaint);
 
-    if (centerGuide != null) {
+    if (gutter != null && gutter!.length >= 2) {
       final guidePaint = Paint()
-        ..color = const Color(0xFF66E88A)
-        ..strokeWidth = 2
+        ..color = const Color(0xFFFFB020)
+        ..strokeWidth = 4
         ..style = PaintingStyle.stroke;
-      final guide = Path()
-        ..moveTo(centerGuide!.first.dx, centerGuide!.first.dy);
-      for (final point in centerGuide!.skip(1)) {
+      final guide = Path()..moveTo(gutter!.first.dx, gutter!.first.dy);
+      for (final point in gutter!.skip(1)) {
         guide.lineTo(point.dx, point.dy);
       }
       canvas.drawPath(guide, guidePaint);
-      for (final point in centerGuide!) {
+      final gutterHandlePaint = Paint()..color = Colors.white;
+      final gutterHandleBorder = Paint()
+        ..color = const Color(0xFFFFB020)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3;
+      for (final point in gutter!) {
         canvas.drawCircle(
           point,
           8,
-          Paint()..color = const Color(0xFF66E88A),
+          gutterHandlePaint,
         );
+        canvas.drawCircle(point, 8, gutterHandleBorder);
       }
     }
 

@@ -18,11 +18,16 @@ import '../corner_adjust/corner_adjust_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   final ScanKind scanKind;
+  final BookScanMode bookScanMode;
 
   /// If provided, the captured page is added to this existing document;
   /// otherwise the caller creates a new document once the first page is
   /// confirmed (kept simple for Phase 1 — one document per scan session).
-  const ScannerScreen({super.key, this.scanKind = ScanKind.document});
+  const ScannerScreen({
+    super.key,
+    this.scanKind = ScanKind.document,
+    this.bookScanMode = BookScanMode.twoPage,
+  });
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -72,6 +77,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           builder: (_) => CornerAdjustScreen(
             capturedImagePath: file.path,
             scanKind: widget.scanKind,
+            bookScanMode: widget.bookScanMode,
           ),
         ),
       );
@@ -132,7 +138,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withValues(alpha: 0.6),
                         width: 2,
                       ),
                     ),
@@ -147,7 +153,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       padding: const EdgeInsets.only(top: 16),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
+                          color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Padding(
@@ -180,7 +186,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                           shape: BoxShape.circle,
                           color: Colors.white,
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.4),
+                            color: Colors.white.withValues(alpha: 0.4),
                             width: 4,
                           ),
                         ),

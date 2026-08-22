@@ -16,14 +16,50 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  Future<void> _newScan(ScanKind kind) async {
+  Future<void> _newScan(ScanKind kind, {BookScanMode? bookScanMode}) async {
     // A fresh scan session starts with no active document; the first
     // captured page (or page pair, for Book Mode) creates one — see
     // CornerAdjustScreen._confirm().
     ref.read(activeDocumentProvider.notifier).state = null;
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScannerScreen(
+          scanKind: kind,
+          bookScanMode: bookScanMode ?? BookScanMode.twoPage,
+        ),
+      ),
+    );
     setState(() {});
+  }
+
+  Future<void> _newBookScan() async {
+    final mode = await showDialog<BookScanMode>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Book scan mode'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BookScanMode.singlePage),
+            child: const ListTile(
+              leading: Icon(Icons.article_outlined),
+              title: Text('Single page'),
+              subtitle: Text('Scan one page at a time'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BookScanMode.twoPage),
+            child: const ListTile(
+              leading: Icon(Icons.menu_book_outlined),
+              title: Text('Two pages'),
+              subtitle: Text('Split an open spread into two pages'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (mode != null && mounted) {
+      await _newScan(ScanKind.book, bookScanMode: mode);
+    }
   }
 
   Future<void> _deleteDocument(ScanDocument doc) async {
@@ -77,8 +113,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final doc = docs[index];
                 final pages = storage.pagesFor(doc);
                 final pageCount = pages.length;
-                final isBookDoc =
-                    pages.isNotEmpty &&
+                final isBookDoc = pages.isNotEmpty &&
                     pages.first.sourceMode != PageSourceMode.document;
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),
@@ -117,7 +152,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           FloatingActionButton.extended(
             heroTag: 'scan_book',
-            onPressed: () => _newScan(ScanKind.book),
+            onPressed: _newBookScan,
             icon: const Icon(Icons.menu_book_outlined),
             label: const Text('Book'),
           ),

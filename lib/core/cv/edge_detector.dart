@@ -133,7 +133,7 @@ class EdgeDetector {
             // should lose to a smaller genuinely-rectangular candidate.
             final combined = areaScore * 0.4 + rectScore * 0.6;
 
-            if (best == null || combined > best!.score) {
+            if (best == null || combined > best.score) {
               best = _Candidate(ordered, areaScore, combined);
             }
           }
@@ -149,7 +149,7 @@ class EdgeDetector {
     }
 
     if (best == null) return null;
-    return DetectedQuad(best!.corners, best!.areaFraction);
+    return DetectedQuad(best.corners, best.areaFraction);
   }
 
   /// 1.0 for a perfect rectangle (all corner angles == 90°), tapering to

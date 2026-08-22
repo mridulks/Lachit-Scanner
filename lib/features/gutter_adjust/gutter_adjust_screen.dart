@@ -176,9 +176,10 @@ class _GutterAdjustScreenState extends ConsumerState<GutterAdjustScreen> {
         (route) => route.isFirst,
       );
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Processing failed: $e')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

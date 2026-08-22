@@ -3,3 +3,6 @@
 /// Book: whole-spread detect -> adjust -> warp -> gutter split ->
 ///       per-page re-warp -> enhance -> save two pages (design doc §4).
 enum ScanKind { document, book }
+
+/// Book capture layout selected for a scan session.
+enum BookScanMode { singlePage, twoPage }

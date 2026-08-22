@@ -148,7 +148,7 @@ class ImageWarper {
 
   /// Encodes [mat] to JPEG and wraps it with its dimensions. Does NOT
   /// dispose [mat] — caller still owns it.
-  static WarpResult encodeJpeg(cv.Mat mat, {int quality = 92}) {
+  static WarpResult encodeJpeg(cv.Mat mat, {int quality = 95}) {
     final (success, encoded) = cv.imencode(
       '.jpg',
       mat,

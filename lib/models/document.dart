@@ -1,6 +1,5 @@
 import 'package:hive/hive.dart';
 
-import 'page.dart';
 
 part 'document.g.dart';
 
