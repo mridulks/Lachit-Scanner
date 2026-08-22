@@ -15,6 +15,7 @@ import '../export/export_screen.dart';
 import '../scanner/scanner_screen.dart';
 import 'page_viewer_screen.dart';
 import 'image_enhancement_screen.dart';
+import 'markup_screen.dart';
 
 class DocumentEditorScreen extends ConsumerStatefulWidget {
   final String documentId;
@@ -274,6 +275,14 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
                         );
                         if (changed == true && mounted) setState(() {});
                       },
+                      onMarkup: () async {
+                        final changed = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => MarkupScreen(page: page),
+                          ),
+                        );
+                        if (changed == true && mounted) setState(() {});
+                      },
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PageViewerScreen(
@@ -310,6 +319,7 @@ class _PageTile extends StatelessWidget {
   final VoidCallback onRetake;
   final VoidCallback onDelete;
   final VoidCallback onEnhance;
+  final VoidCallback onMarkup;
   final VoidCallback onTap;
   final VoidCallback onExportSingle;
 
@@ -321,6 +331,7 @@ class _PageTile extends StatelessWidget {
     required this.onRetake,
     required this.onDelete,
     required this.onEnhance,
+    required this.onMarkup,
     required this.onTap,
     required this.onExportSingle,
   });
@@ -362,6 +373,9 @@ class _PageTile extends StatelessWidget {
               case 'enhance':
                 onEnhance();
                 break;
+              case 'markup':
+                onMarkup();
+                break;
             }
           },
           itemBuilder: (context) => const [
@@ -369,6 +383,7 @@ class _PageTile extends StatelessWidget {
             PopupMenuItem(value: 'rotate_right', child: Text('Rotate right')),
             PopupMenuItem(value: 'retake', child: Text('Retake')),
             PopupMenuItem(value: 'enhance', child: Text('Enhance')),
+            PopupMenuItem(value: 'markup', child: Text('Markup & annotate')),
             PopupMenuItem(value: 'export', child: Text('Export this page')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
