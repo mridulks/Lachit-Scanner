@@ -14,6 +14,7 @@ import '../../models/page.dart';
 import '../export/export_screen.dart';
 import '../scanner/scanner_screen.dart';
 import 'page_viewer_screen.dart';
+import 'image_enhancement_screen.dart';
 
 class DocumentEditorScreen extends ConsumerStatefulWidget {
   final String documentId;
@@ -265,6 +266,14 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
                       onRotateRight: () => _rotate(page, clockwise: true),
                       onRetake: () => _retake(page),
                       onDelete: () => _deletePage(page),
+                      onEnhance: () async {
+                        final changed = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => ImageEnhancementScreen(page: page),
+                          ),
+                        );
+                        if (changed == true && mounted) setState(() {});
+                      },
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PageViewerScreen(
@@ -300,6 +309,7 @@ class _PageTile extends StatelessWidget {
   final VoidCallback onRotateRight;
   final VoidCallback onRetake;
   final VoidCallback onDelete;
+  final VoidCallback onEnhance;
   final VoidCallback onTap;
   final VoidCallback onExportSingle;
 
@@ -310,6 +320,7 @@ class _PageTile extends StatelessWidget {
     required this.onRotateRight,
     required this.onRetake,
     required this.onDelete,
+    required this.onEnhance,
     required this.onTap,
     required this.onExportSingle,
   });
@@ -348,12 +359,16 @@ class _PageTile extends StatelessWidget {
               case 'delete':
                 onDelete();
                 break;
+              case 'enhance':
+                onEnhance();
+                break;
             }
           },
           itemBuilder: (context) => const [
             PopupMenuItem(value: 'rotate_left', child: Text('Rotate left')),
             PopupMenuItem(value: 'rotate_right', child: Text('Rotate right')),
             PopupMenuItem(value: 'retake', child: Text('Retake')),
+            PopupMenuItem(value: 'enhance', child: Text('Enhance')),
             PopupMenuItem(value: 'export', child: Text('Export this page')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],

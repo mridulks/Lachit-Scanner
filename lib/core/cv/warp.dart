@@ -216,4 +216,56 @@ class ImageWarper {
         }
     }
   }
+
+  /// Applies non-destructive editor controls to an already processed page.
+  /// The returned Mat is owned by the caller.
+  static cv.Mat adjustPage(
+    cv.Mat input, {
+    required ColorMode colorMode,
+    double brightness = 0,
+    double contrast = 1,
+    double shadowRemoval = 0,
+    double sharpness = 0,
+  }) {
+    cv.Mat adjusted = cv.convertScaleAbs(
+      input,
+      alpha: contrast,
+      beta: brightness,
+    );
+    cv.Mat? normalized;
+    cv.Mat? sharpened;
+    try {
+      if (sharpness > 0) {
+        final blurred = cv.gaussianBlur(adjusted, (0, 0), 3);
+        sharpened = cv.addWeighted(
+          adjusted,
+          1 + sharpness,
+          blurred,
+          -sharpness,
+          0,
+        );
+        blurred.dispose();
+        adjusted.dispose();
+        adjusted = sharpened;
+        sharpened = null;
+      }
+      if (colorMode == ColorMode.grayscale && shadowRemoval > 0) {
+        final gray = applyColorMode(adjusted, ColorMode.grayscale);
+        final clahe = cv.CLAHE(1.0 + shadowRemoval * 2, (8, 8));
+        normalized = clahe.apply(gray);
+        gray.dispose();
+        adjusted.dispose();
+        adjusted = normalized;
+        normalized = null;
+      } else if (colorMode != ColorMode.color) {
+        final modeAdjusted = applyColorMode(adjusted, colorMode);
+        adjusted.dispose();
+        adjusted = modeAdjusted;
+      }
+      return adjusted;
+    } finally {
+      normalized?.dispose();
+      sharpened?.dispose();
+    }
+  }
 }
