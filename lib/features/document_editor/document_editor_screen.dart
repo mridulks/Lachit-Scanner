@@ -68,6 +68,10 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
   }
 
   Future<void> _addPage() async {
+    await _insertPagesAt(ref.read(storageProvider).pagesFor(_doc).length);
+  }
+
+  Future<void> _insertPagesAt(int index) async {
     final storage = ref.read(storageProvider);
     final doc = _doc;
     ref.read(activeDocumentProvider.notifier).state = doc;
@@ -78,12 +82,62 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
     final pages = storage.pagesFor(doc);
     final kind =
         pages.isNotEmpty && pages.last.sourceMode != PageSourceMode.document
-        ? ScanKind.book
-        : ScanKind.document;
+            ? ScanKind.book
+            : ScanKind.document;
+    var bookScanMode = BookScanMode.singlePage;
+    if (kind == ScanKind.book) {
+      final selectedMode = await showDialog<BookScanMode>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Add book page'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, BookScanMode.singlePage),
+              child: const ListTile(
+                leading: Icon(Icons.article_outlined),
+                title: Text('Single page'),
+                subtitle: Text('No gutter or page split'),
+              ),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, BookScanMode.twoPage),
+              child: const ListTile(
+                leading: Icon(Icons.menu_book_outlined),
+                title: Text('Two pages'),
+                subtitle: Text('Scan an open spread'),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (selectedMode == null || !mounted) return;
+      bookScanMode = selectedMode;
+    }
 
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => ScannerScreen(scanKind: kind)));
-    setState(() {}); // storage already bumped documentVersionProvider
+    final existingIds = storage.pagesFor(doc).map((page) => page.id).toSet();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScannerScreen(
+          scanKind: kind,
+          bookScanMode: bookScanMode,
+        ),
+      ),
+    );
+
+    final currentPages = storage.pagesFor(doc);
+    final added = currentPages
+        .where((page) => !existingIds.contains(page.id))
+        .map((page) => page.id)
+        .toList();
+    if (added.isNotEmpty) {
+      final currentIds = currentPages.map((page) => page.id).toList();
+      currentIds.removeWhere(added.contains);
+      final insertionIndex = index.clamp(0, currentIds.length).toInt();
+      currentIds.insertAll(insertionIndex, added);
+      await storage.reorderPages(doc, currentIds);
+      ref.read(documentVersionProvider.notifier).state++;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _retake(ScanPage page) async {
@@ -177,44 +231,57 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
             onPressed: pages.isEmpty
                 ? null
                 : () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ExportScreen(document: doc),
+                      MaterialPageRoute(
+                        builder: (_) => ExportScreen(document: doc),
+                      ),
                     ),
-                  ),
           ),
         ],
       ),
       body: pages.isEmpty
-          ? const Center(child: Text('No pages yet — tap + to scan.'))
+          ? Center(
+              child: OutlinedButton.icon(
+                onPressed: () => _insertPagesAt(0),
+                icon: const Icon(Icons.add_a_photo),
+                label: const Text('Scan first page'),
+              ),
+            )
           : ReorderableListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: pages.length,
               onReorder: (o, n) => _reorder(o, n, pages),
               itemBuilder: (context, index) {
                 final page = pages[index];
-                return _PageTile(
+                return Column(
                   key: ValueKey(page.id),
-                  page: page,
-                  index: index,
-                  onRotateLeft: () => _rotate(page, clockwise: false),
-                  onRotateRight: () => _rotate(page, clockwise: true),
-                  onRetake: () => _retake(page),
-                  onDelete: () => _deletePage(page),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PageViewerScreen(
-                        page: page,
-                        index: index,
-                        total: pages.length,
+                  children: [
+                    _InsertPageButton(
+                      onPressed: () => _insertPagesAt(index),
+                    ),
+                    _PageTile(
+                      page: page,
+                      index: index,
+                      onRotateLeft: () => _rotate(page, clockwise: false),
+                      onRotateRight: () => _rotate(page, clockwise: true),
+                      onRetake: () => _retake(page),
+                      onDelete: () => _deletePage(page),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PageViewerScreen(
+                            page: page,
+                            index: index,
+                            total: pages.length,
+                          ),
+                        ),
+                      ),
+                      onExportSingle: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ExportScreen(document: doc, singlePage: page),
+                        ),
                       ),
                     ),
-                  ),
-                  onExportSingle: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ExportScreen(document: doc, singlePage: page),
-                    ),
-                  ),
+                  ],
                 );
               },
             ),
@@ -237,7 +304,6 @@ class _PageTile extends StatelessWidget {
   final VoidCallback onExportSingle;
 
   const _PageTile({
-    super.key,
     required this.page,
     required this.index,
     required this.onRotateLeft,
@@ -308,5 +374,26 @@ class _PageTile extends StatelessWidget {
       ColorMode.bw => 'B&W',
     };
     return '$mode · $color';
+  }
+}
+
+class _InsertPageButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _InsertPageButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: Center(
+        child: IconButton(
+          onPressed: onPressed,
+          icon: const Icon(Icons.add_circle_outline, size: 20),
+          tooltip: 'Insert page here',
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+    );
   }
 }
