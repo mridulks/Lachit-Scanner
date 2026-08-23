@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../core/export/image_export.dart';
 import '../../core/providers.dart';
 import '../../core/scan_kind.dart';
 import '../../models/document.dart';
@@ -16,6 +19,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final Set<String> _selectedDocumentIds = {};
+  bool _selectionMode = false;
+
   Future<void> _newScan(ScanKind kind, {BookScanMode? bookScanMode}) async {
     // A fresh scan session starts with no active document; the first
     // captured page (or page pair, for Book Mode) creates one — see
@@ -87,6 +93,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _deleteSelected(List<ScanDocument> docs) async {
+    if (_selectedDocumentIds.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete selected documents?'),
+        content:
+            Text('${_selectedDocumentIds.length} document(s) will be removed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final storage = ref.read(storageProvider);
+      for (final doc in docs.where(
+        (doc) => _selectedDocumentIds.contains(doc.id),
+      )) {
+        await storage.deleteDocument(doc);
+      }
+      setState(() {
+        _selectedDocumentIds.clear();
+        _selectionMode = false;
+      });
+    }
+  }
+
+  Future<void> _exportSelected(List<ScanDocument> docs) async {
+    final selected =
+        docs.where((doc) => _selectedDocumentIds.contains(doc.id)).toList();
+    if (selected.isEmpty) return;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final files = <XFile>[];
+      var fileNumber = 1;
+      final storage = ref.read(storageProvider);
+      for (final doc in selected) {
+        for (final page in storage.pagesFor(doc)) {
+          final path = '${tempDir.path}/batch_${fileNumber++}.jpg';
+          await ImageExporter.exportPage(
+            page,
+            outputPath: path,
+            quality: ExportQuality.best,
+          );
+          files.add(XFile(path, mimeType: 'image/jpeg'));
+        }
+      }
+      if (files.isNotEmpty && mounted) {
+        await Share.shareXFiles(files, text: 'Selected scans');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Batch export failed: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(documentVersionProvider);
@@ -94,7 +166,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final docs = storage.listDocuments();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Lachit Scanner')),
+      appBar: AppBar(
+        title: Text(
+          _selectionMode
+              ? '${_selectedDocumentIds.length} selected'
+              : 'Lachit Scanner',
+        ),
+        actions: [
+          if (_selectionMode) ...[
+            IconButton(
+              onPressed: docs.isEmpty
+                  ? null
+                  : () => setState(() {
+                        if (_selectedDocumentIds.length == docs.length) {
+                          _selectedDocumentIds.clear();
+                        } else {
+                          _selectedDocumentIds
+                            ..clear()
+                            ..addAll(docs.map((doc) => doc.id));
+                        }
+                      }),
+              icon: Icon(
+                _selectedDocumentIds.length == docs.length
+                    ? Icons.deselect
+                    : Icons.select_all,
+              ),
+              tooltip: _selectedDocumentIds.length == docs.length
+                  ? 'Clear selection'
+                  : 'Select all',
+            ),
+            IconButton(
+              onPressed: _selectedDocumentIds.isEmpty
+                  ? null
+                  : () => _exportSelected(docs),
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Export selected',
+            ),
+            IconButton(
+              onPressed: _selectedDocumentIds.isEmpty
+                  ? null
+                  : () => _deleteSelected(docs),
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete selected',
+            ),
+            IconButton(
+              onPressed: () => setState(() {
+                _selectedDocumentIds.clear();
+                _selectionMode = false;
+              }),
+              icon: const Icon(Icons.close),
+              tooltip: 'Exit selection',
+            ),
+          ] else
+            IconButton(
+              onPressed: () => setState(() => _selectionMode = true),
+              icon: const Icon(Icons.checklist),
+              tooltip: 'Select documents',
+            ),
+        ],
+      ),
       body: docs.isEmpty
           ? Center(
               child: Padding(
@@ -118,30 +248,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   child: ListTile(
-                    leading: Icon(
-                      isBookDoc
-                          ? Icons.menu_book_outlined
-                          : Icons.description_outlined,
-                      size: 36,
-                    ),
+                    onLongPress: () => setState(() {
+                      _selectionMode = true;
+                      if (!_selectedDocumentIds.add(doc.id)) {
+                        _selectedDocumentIds.remove(doc.id);
+                      }
+                    }),
+                    leading: _selectionMode
+                        ? Checkbox(
+                            value: _selectedDocumentIds.contains(doc.id),
+                            onChanged: (_) => setState(() {
+                              if (!_selectedDocumentIds.add(doc.id)) {
+                                _selectedDocumentIds.remove(doc.id);
+                              }
+                            }),
+                          )
+                        : Icon(
+                            isBookDoc
+                                ? Icons.menu_book_outlined
+                                : Icons.description_outlined,
+                            size: 36,
+                          ),
                     title: Text(doc.name),
                     subtitle: Text(
                       '$pageCount page${pageCount == 1 ? '' : 's'} · '
                       'Updated ${_formatDate(doc.updatedAt)}',
                     ),
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              DocumentEditorScreen(documentId: doc.id),
-                        ),
-                      );
-                      setState(() {});
-                    },
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _deleteDocument(doc),
-                    ),
+                    onTap: _selectionMode
+                        ? () => setState(() {
+                              if (!_selectedDocumentIds.add(doc.id)) {
+                                _selectedDocumentIds.remove(doc.id);
+                              }
+                            })
+                        : () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    DocumentEditorScreen(documentId: doc.id),
+                              ),
+                            );
+                            setState(() {});
+                          },
+                    trailing: _selectionMode
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _deleteDocument(doc),
+                          ),
                   ),
                 );
               },

@@ -137,82 +137,92 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
       ),
       body: bytes == null
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                AspectRatio(
-                  aspectRatio: 0.72,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: ColorFiltered(
-                        colorFilter: _previewFilter(),
-                        child: Image.memory(bytes, fit: BoxFit.contain),
+          : Scrollbar(
+              thumbVisibility: true,
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  32 + MediaQuery.viewPaddingOf(context).bottom,
+                ),
+                children: [
+                  AspectRatio(
+                    aspectRatio: 0.72,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: ColorFiltered(
+                          colorFilter: _previewFilter(),
+                          child: Image.memory(bytes, fit: BoxFit.contain),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
-                Text('Presets', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final preset in ['Original', 'Clean', 'Text'])
-                      OutlinedButton(
-                        onPressed: () => _preset(preset),
-                        child: Text(preset),
+                  const SizedBox(height: 18),
+                  Text('Presets',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final preset in ['Original', 'Clean', 'Text'])
+                        OutlinedButton(
+                          onPressed: () => _preset(preset),
+                          child: Text(preset),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SegmentedButton<ColorMode>(
+                    segments: const [
+                      ButtonSegment(
+                          value: ColorMode.color, label: Text('Color')),
+                      ButtonSegment(
+                        value: ColorMode.grayscale,
+                        label: Text('Grayscale'),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                SegmentedButton<ColorMode>(
-                  segments: const [
-                    ButtonSegment(value: ColorMode.color, label: Text('Color')),
-                    ButtonSegment(
-                      value: ColorMode.grayscale,
-                      label: Text('Grayscale'),
-                    ),
-                    ButtonSegment(value: ColorMode.bw, label: Text('B&W')),
-                  ],
-                  selected: {_colorMode},
-                  onSelectionChanged: (value) =>
-                      setState(() => _colorMode = value.first),
-                ),
-                const SizedBox(height: 14),
-                _slider(
-                  'Brightness',
-                  _brightness,
-                  -40,
-                  40,
-                  (value) => setState(() => _brightness = value),
-                ),
-                _slider(
-                  'Contrast',
-                  _contrast,
-                  0.7,
-                  1.5,
-                  (value) => setState(() => _contrast = value),
-                ),
-                _slider(
-                  'Shadow removal',
-                  _shadowRemoval,
-                  0,
-                  1,
-                  (value) => setState(() => _shadowRemoval = value),
-                ),
-                _slider(
-                  'Sharpness',
-                  _sharpness,
-                  0,
-                  1,
-                  (value) => setState(() => _sharpness = value),
-                ),
-              ],
+                      ButtonSegment(value: ColorMode.bw, label: Text('B&W')),
+                    ],
+                    selected: {_colorMode},
+                    onSelectionChanged: (value) =>
+                        setState(() => _colorMode = value.first),
+                  ),
+                  const SizedBox(height: 14),
+                  _slider(
+                    'Brightness',
+                    _brightness,
+                    -40,
+                    40,
+                    (value) => setState(() => _brightness = value),
+                  ),
+                  _slider(
+                    'Contrast',
+                    _contrast,
+                    0.7,
+                    1.5,
+                    (value) => setState(() => _contrast = value),
+                  ),
+                  _slider(
+                    'Shadow removal',
+                    _shadowRemoval,
+                    0,
+                    1,
+                    (value) => setState(() => _shadowRemoval = value),
+                  ),
+                  _slider(
+                    'Sharpness',
+                    _sharpness,
+                    0,
+                    1,
+                    (value) => setState(() => _sharpness = value),
+                  ),
+                ],
+              ),
             ),
     );
   }

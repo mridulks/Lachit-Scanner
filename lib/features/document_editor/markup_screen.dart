@@ -7,7 +7,18 @@ import 'package:image/image.dart' as img;
 
 import '../../models/page.dart';
 
-enum _MarkupTool { pen, highlighter, redaction, text, signature, stamp, eraser }
+enum _MarkupTool {
+  pen,
+  highlighter,
+  redaction,
+  text,
+  signature,
+  stamp,
+  shape,
+  eraser,
+}
+
+enum _ShapeKind { rectangle, oval, line, arrow }
 
 const _penColors = [
   Colors.red,
@@ -71,6 +82,15 @@ class _MarkupStroke {
   });
 }
 
+class _MarkupShape {
+  final _ShapeKind kind;
+  final Offset start;
+  final Offset end;
+  final bool filled;
+
+  const _MarkupShape(this.kind, this.start, this.end, this.filled);
+}
+
 class _MarkupScreenState extends State<MarkupScreen> {
   static final List<List<Offset>> _savedSignatures = [];
   final GlobalKey _canvasKey = GlobalKey();
@@ -79,12 +99,17 @@ class _MarkupScreenState extends State<MarkupScreen> {
   final List<_MarkupLabel> _labels = [];
   final List<_MarkupSignature> _signatures = [];
   final List<_MarkupStamp> _stamps = [];
+  final List<_MarkupShape> _shapes = [];
   Uint8List? _bytes;
   _MarkupTool _tool = _MarkupTool.pen;
   Color _penColor = Colors.red;
   List<Offset> _activeStroke = [];
   Offset? _dragStart;
   Rect? _activeRedaction;
+  Offset? _activeShapeStart;
+  Offset? _activeShapeEnd;
+  _ShapeKind _shapeKind = _ShapeKind.rectangle;
+  bool _shapeFilled = false;
   bool _saving = false;
   int _draggingSignature = -1;
   int _draggingStamp = -1;
@@ -104,6 +129,11 @@ class _MarkupScreenState extends State<MarkupScreen> {
   void _startGesture(Offset point) {
     if (_tool == _MarkupTool.eraser) {
       _eraseAt(point);
+      return;
+    }
+    if (_tool == _MarkupTool.shape) {
+      _activeShapeStart = point;
+      _activeShapeEnd = point;
       return;
     }
     _draggingSignature = _signatureAt(point);
@@ -129,6 +159,10 @@ class _MarkupScreenState extends State<MarkupScreen> {
   void _updateGesture(Offset point) {
     if (_tool == _MarkupTool.eraser) {
       _eraseAt(point);
+      return;
+    }
+    if (_tool == _MarkupTool.shape && _activeShapeStart != null) {
+      setState(() => _activeShapeEnd = point);
       return;
     }
     if (_lastAnnotationPoint != null) {
@@ -196,6 +230,21 @@ class _MarkupScreenState extends State<MarkupScreen> {
   }
 
   void _endGesture() {
+    if (_tool == _MarkupTool.shape) {
+      final start = _activeShapeStart;
+      final end = _activeShapeEnd;
+      if (start != null && end != null && (end - start).distance > 6) {
+        setState(() {
+          _shapes.add(_MarkupShape(_shapeKind, start, end, _shapeFilled));
+          _activeShapeStart = null;
+          _activeShapeEnd = null;
+        });
+      } else {
+        _activeShapeStart = null;
+        _activeShapeEnd = null;
+      }
+      return;
+    }
     if (_lastAnnotationPoint != null) {
       _draggingSignature = -1;
       _draggingStamp = -1;
@@ -357,6 +406,50 @@ class _MarkupScreenState extends State<MarkupScreen> {
     }
   }
 
+  Future<void> _chooseShape() async {
+    final selection = await showModalBottomSheet<(_ShapeKind, bool)>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            for (final kind in _ShapeKind.values)
+              ListTile(
+                leading: Icon(_shapeIcon(kind)),
+                title: Text(_shapeName(kind)),
+                trailing: Switch(
+                  value: _shapeFilled,
+                  onChanged: (value) {
+                    Navigator.pop(context, (kind, value));
+                  },
+                ),
+                onTap: () => Navigator.pop(context, (kind, _shapeFilled)),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selection != null && mounted) {
+      setState(() {
+        _shapeKind = selection.$1;
+        _shapeFilled = selection.$2;
+      });
+    }
+  }
+
+  IconData _shapeIcon(_ShapeKind kind) => switch (kind) {
+        _ShapeKind.rectangle => Icons.rectangle_outlined,
+        _ShapeKind.oval => Icons.circle_outlined,
+        _ShapeKind.line => Icons.remove,
+        _ShapeKind.arrow => Icons.arrow_forward,
+      };
+
+  String _shapeName(_ShapeKind kind) => switch (kind) {
+        _ShapeKind.rectangle => 'Rectangle',
+        _ShapeKind.oval => 'Oval / circle',
+        _ShapeKind.line => 'Line',
+        _ShapeKind.arrow => 'Arrow',
+      };
+
   String _dateStamp() {
     final date = DateTime.now();
     return '${date.day.toString().padLeft(2, '0')}/'
@@ -371,6 +464,8 @@ class _MarkupScreenState extends State<MarkupScreen> {
         _signatures.removeLast();
       } else if (_stamps.isNotEmpty && _tool == _MarkupTool.stamp) {
         _stamps.removeLast();
+      } else if (_shapes.isNotEmpty && _tool == _MarkupTool.shape) {
+        _shapes.removeLast();
       } else if (_redactions.isNotEmpty && _tool == _MarkupTool.redaction) {
         _redactions.removeLast();
       } else if (_strokes.isNotEmpty) {
@@ -406,6 +501,15 @@ class _MarkupScreenState extends State<MarkupScreen> {
         labels: _labels,
         signatures: _signatures,
         stamps: _stamps,
+        shapes: _shapes,
+        activeShape: _activeShapeStart == null || _activeShapeEnd == null
+            ? null
+            : _MarkupShape(
+                _shapeKind,
+                _activeShapeStart!,
+                _activeShapeEnd!,
+                _shapeFilled,
+              ),
       ).paint(canvas, canvasSize);
       final picture = recorder.endRecording();
       final image =
@@ -448,7 +552,8 @@ class _MarkupScreenState extends State<MarkupScreen> {
                     _redactions.isEmpty &&
                     _labels.isEmpty &&
                     _signatures.isEmpty &&
-                    _stamps.isEmpty
+                    _stamps.isEmpty &&
+                    _shapes.isEmpty
                 ? null
                 : _undo,
             icon: const Icon(Icons.undo),
@@ -490,6 +595,16 @@ class _MarkupScreenState extends State<MarkupScreen> {
                             labels: _labels,
                             signatures: _signatures,
                             stamps: _stamps,
+                            shapes: _shapes,
+                            activeShape: _activeShapeStart == null ||
+                                    _activeShapeEnd == null
+                                ? null
+                                : _MarkupShape(
+                                    _shapeKind,
+                                    _activeShapeStart!,
+                                    _activeShapeEnd!,
+                                    _shapeFilled,
+                                  ),
                           ),
                         ),
                       ],
@@ -514,10 +629,14 @@ class _MarkupScreenState extends State<MarkupScreen> {
                 (_MarkupTool.text, Icons.text_fields, 'Text'),
                 (_MarkupTool.signature, Icons.draw, 'Signature'),
                 (_MarkupTool.stamp, Icons.verified_outlined, 'Stamp'),
+                (_MarkupTool.shape, Icons.category_outlined, 'Shape'),
                 (_MarkupTool.eraser, Icons.auto_fix_high, 'Eraser'),
               ])
                 IconButton(
-                  onPressed: () => setState(() => _tool = entry.$1),
+                  onPressed: () async {
+                    setState(() => _tool = entry.$1);
+                    if (entry.$1 == _MarkupTool.shape) await _chooseShape();
+                  },
                   tooltip: entry.$3,
                   icon: Icon(
                     entry.$2,
@@ -563,6 +682,8 @@ class _MarkupPainter extends CustomPainter {
   final List<_MarkupLabel> labels;
   final List<_MarkupSignature> signatures;
   final List<_MarkupStamp> stamps;
+  final List<_MarkupShape> shapes;
+  final _MarkupShape? activeShape;
 
   const _MarkupPainter({
     required this.strokes,
@@ -572,12 +693,17 @@ class _MarkupPainter extends CustomPainter {
     required this.labels,
     required this.signatures,
     required this.stamps,
+    required this.shapes,
+    this.activeShape,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final stroke in strokes) {
       _drawStroke(canvas, stroke.points, stroke);
+    }
+    for (final shape in [...shapes, if (activeShape != null) activeShape!]) {
+      _drawShape(canvas, shape);
     }
     if (activeStroke.length > 1) {
       _drawStroke(
@@ -674,6 +800,32 @@ class _MarkupPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke,
     );
+  }
+
+  void _drawShape(Canvas canvas, _MarkupShape shape) {
+    final paint = Paint()
+      ..color = Colors.blue
+      ..strokeWidth = 3
+      ..style = shape.filled ? PaintingStyle.fill : PaintingStyle.stroke;
+    final rect = Rect.fromPoints(shape.start, shape.end);
+    switch (shape.kind) {
+      case _ShapeKind.rectangle:
+        canvas.drawRect(rect, paint);
+      case _ShapeKind.oval:
+        canvas.drawOval(rect, paint);
+      case _ShapeKind.line:
+        paint.style = PaintingStyle.stroke;
+        canvas.drawLine(shape.start, shape.end, paint);
+      case _ShapeKind.arrow:
+        paint.style = PaintingStyle.stroke;
+        canvas.drawLine(shape.start, shape.end, paint);
+        final direction = shape.start - shape.end;
+        final unit = direction / direction.distance;
+        final side = Offset(-unit.dy, unit.dx);
+        final wing = shape.end + unit * 18;
+        canvas.drawLine(shape.end, wing + side * 8, paint);
+        canvas.drawLine(shape.end, wing - side * 8, paint);
+    }
   }
 
   @override

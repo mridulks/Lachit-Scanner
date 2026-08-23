@@ -197,18 +197,17 @@ class ImageWarper {
         final gray = cv.cvtColor(input, cv.COLOR_BGR2GRAY);
         cv.Mat denoised = cv.Mat.empty();
         try {
-          // Median blur before thresholding — knocks out the salt-and-
-          // pepper speckle that adaptiveThreshold otherwise amplifies
-          // from paper texture and JPEG noise. Small odd kernel (3) so
-          // it doesn't visibly soften actual text edges.
-          denoised = cv.medianBlur(gray, 3);
+          // A light Gaussian pre-blur suppresses paper grain while retaining
+          // thin character strokes. The larger adaptive window handles the
+          // broad shadows common in handheld page photographs.
+          denoised = cv.gaussianBlur(gray, (3, 3), 0);
           return cv.adaptiveThreshold(
             denoised,
             255,
             cv.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv.THRESH_BINARY,
-            25, // block size — odd, tuned for typical phone-camera DPI
-            10, // C — subtracted constant; higher = more aggressive
+            41, // odd window large enough to follow page-scale lighting
+            9, // C — preserves lighter, thinner text strokes
           );
         } finally {
           gray.dispose();

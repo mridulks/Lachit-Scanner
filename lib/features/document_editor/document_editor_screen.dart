@@ -16,6 +16,7 @@ import '../scanner/scanner_screen.dart';
 import 'page_viewer_screen.dart';
 import 'image_enhancement_screen.dart';
 import 'markup_screen.dart';
+import 'crop_screen.dart';
 
 class DocumentEditorScreen extends ConsumerStatefulWidget {
   final String documentId;
@@ -196,7 +197,6 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
     List<ScanPage> pages,
   ) async {
     final storage = ref.read(storageProvider);
-    if (newIndex > oldIndex) newIndex -= 1;
     final ids = pages.map((p) => p.id).toList();
     final moved = ids.removeAt(oldIndex);
     ids.insert(newIndex, moved);
@@ -251,7 +251,7 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
           : ReorderableListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: pages.length,
-              onReorder: (o, n) => _reorder(o, n, pages),
+              onReorderItem: (o, n) => _reorder(o, n, pages),
               itemBuilder: (context, index) {
                 final page = pages[index];
                 return Column(
@@ -279,6 +279,14 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
                         final changed = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
                             builder: (_) => MarkupScreen(page: page),
+                          ),
+                        );
+                        if (changed == true && mounted) setState(() {});
+                      },
+                      onCrop: () async {
+                        final changed = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => CropScreen(page: page),
                           ),
                         );
                         if (changed == true && mounted) setState(() {});
@@ -320,6 +328,7 @@ class _PageTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEnhance;
   final VoidCallback onMarkup;
+  final VoidCallback onCrop;
   final VoidCallback onTap;
   final VoidCallback onExportSingle;
 
@@ -332,6 +341,7 @@ class _PageTile extends StatelessWidget {
     required this.onDelete,
     required this.onEnhance,
     required this.onMarkup,
+    required this.onCrop,
     required this.onTap,
     required this.onExportSingle,
   });
@@ -340,55 +350,103 @@ class _PageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      child: ListTile(
-        onTap: onTap,
-        leading: SizedBox(
-          width: 56,
-          height: 72,
-          child: RotatedBox(
-            quarterTurns: page.rotation ~/ 90,
-            child: Image.file(File(page.imagePath), fit: BoxFit.cover),
+      child: Column(
+        children: [
+          ListTile(
+            onTap: onTap,
+            leading: SizedBox(
+              width: 56,
+              height: 72,
+              child: RotatedBox(
+                quarterTurns: page.rotation ~/ 90,
+                child: Image.file(File(page.imagePath), fit: BoxFit.cover),
+              ),
+            ),
+            title: Text('Page ${index + 1}'),
+            subtitle: Text(_modeLabel(page)),
+            trailing: PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.more_vert),
+              offset: const Offset(0, 48),
+              onSelected: (v) {
+                switch (v) {
+                  case 'rotate_left':
+                    onRotateLeft();
+                    break;
+                  case 'rotate_right':
+                    onRotateRight();
+                    break;
+                  case 'retake':
+                    onRetake();
+                    break;
+                  case 'export':
+                    onExportSingle();
+                    break;
+                  case 'delete':
+                    onDelete();
+                    break;
+                  case 'enhance':
+                    onEnhance();
+                    break;
+                  case 'markup':
+                    onMarkup();
+                    break;
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'rotate_left',
+                  child: Text('Rotate left'),
+                ),
+                PopupMenuItem(
+                  value: 'rotate_right',
+                  child: Text('Rotate right'),
+                ),
+                PopupMenuItem(value: 'retake', child: Text('Retake')),
+                PopupMenuItem(value: 'enhance', child: Text('Enhance')),
+                PopupMenuItem(
+                  value: 'markup',
+                  child: Text('Markup & annotate'),
+                ),
+                PopupMenuItem(
+                  value: 'export',
+                  child: Text('Export this page'),
+                ),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
           ),
-        ),
-        title: Text('Page ${index + 1}'),
-        subtitle: Text(_modeLabel(page)),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) {
-            switch (v) {
-              case 'rotate_left':
-                onRotateLeft();
-                break;
-              case 'rotate_right':
-                onRotateRight();
-                break;
-              case 'retake':
-                onRetake();
-                break;
-              case 'export':
-                onExportSingle();
-                break;
-              case 'delete':
-                onDelete();
-                break;
-              case 'enhance':
-                onEnhance();
-                break;
-              case 'markup':
-                onMarkup();
-                break;
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'rotate_left', child: Text('Rotate left')),
-            PopupMenuItem(value: 'rotate_right', child: Text('Rotate right')),
-            PopupMenuItem(value: 'retake', child: Text('Retake')),
-            PopupMenuItem(value: 'enhance', child: Text('Enhance')),
-            PopupMenuItem(value: 'markup', child: Text('Markup & annotate')),
-            PopupMenuItem(value: 'export', child: Text('Export this page')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-        ),
+          Padding(
+            padding: const EdgeInsets.only(left: 72, right: 8, bottom: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  onPressed: onRotateLeft,
+                  icon: const Icon(Icons.rotate_left),
+                  tooltip: 'Rotate left',
+                ),
+                IconButton(
+                  onPressed: onRotateRight,
+                  icon: const Icon(Icons.rotate_right),
+                  tooltip: 'Rotate right',
+                ),
+                IconButton(
+                  onPressed: onEnhance,
+                  icon: const Icon(Icons.tune),
+                  tooltip: 'Enhance',
+                ),
+                IconButton(
+                  onPressed: onCrop,
+                  icon: const Icon(Icons.crop),
+                  tooltip: 'Crop',
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+
     );
   }
 
