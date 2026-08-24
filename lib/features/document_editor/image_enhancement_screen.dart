@@ -51,12 +51,18 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
           _contrast = 1.08;
           _shadowRemoval = 0.35;
           _sharpness = 0.2;
+        // case 'Text':
+        //   _colorMode = ColorMode.bw;
+        //   _brightness = 0;
+        //   _contrast = 1.12;
+        //   _shadowRemoval = 0;
+        //   _sharpness = 0.25;
         case 'Text':
           _colorMode = ColorMode.bw;
-          _brightness = 0;
-          _contrast = 1.12;
+          _brightness = 35;
+          _contrast = 1.3;
           _shadowRemoval = 0;
-          _sharpness = 0.25;
+          _sharpness = 0.5;
       }
     });
   }
