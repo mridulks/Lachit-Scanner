@@ -1,4 +1,4 @@
-package com.mridul.lachit_scanner_shell
+package com.mridul.lachit_scanner
 
 import io.flutter.embedding.android.FlutterActivity
 

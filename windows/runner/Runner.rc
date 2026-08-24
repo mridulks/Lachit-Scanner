@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.mridul" "\0"
-            VALUE "FileDescription", "lachit_scanner_shell" "\0"
+            VALUE "FileDescription", "lachit_scanner" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "lachit_scanner_shell" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.mridul. All rights reserved." "\0"
-            VALUE "OriginalFilename", "lachit_scanner_shell.exe" "\0"
-            VALUE "ProductName", "lachit_scanner_shell" "\0"
+            VALUE "InternalName", "lachit_scanner" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 lachit.org. All rights reserved." "\0"
+            VALUE "OriginalFilename", "lachit_scanner.exe" "\0"
+            VALUE "ProductName", "lachit_scanner" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

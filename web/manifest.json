@@ -1,6 +1,6 @@
 {
-    "name": "lachit_scanner_shell",
-    "short_name": "lachit_scanner_shell",
+    "name": "lachit_scanner",
+    "short_name": "lachit_scanner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

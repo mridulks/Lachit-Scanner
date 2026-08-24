@@ -11,7 +11,7 @@ This code was written in a sandbox with **no network access to pub.dev**,
 so nothing here has been `pub get`'d, compiled, or run. Before you start:
 
 ```bash
-flutter create --org com.yourname lachit_scanner_shell
+flutter create --org com.yourname lachit_scanner
 # then copy lib/ and pubspec.yaml from this project into it, replacing
 # the generated ones, OR just `flutter create .` in this folder to
 # generate the android/ and ios/ platform folders around the existing lib/.

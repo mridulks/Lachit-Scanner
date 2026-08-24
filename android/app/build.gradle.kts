@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.mridul.lachit_scanner_shell"
+    namespace = "com.mridul.lachit_scanner"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.mridul.lachit_scanner_shell"
+        applicationId = "com.mridul.lachit_scanner"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
