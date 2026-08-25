@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/export/image_export.dart';
 import '../../core/providers.dart';
 import '../../core/scan_kind.dart';
@@ -217,12 +217,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: const Icon(Icons.close),
               tooltip: 'Exit selection',
             ),
-          ] else
+          ] else ...[
+            IconButton(
+              onPressed: _showSettingsSheet,
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'More options',
+            ),
             IconButton(
               onPressed: () => setState(() => _selectionMode = true),
               icon: const Icon(Icons.checklist),
               tooltip: 'Select documents',
             ),
+          ],
         ],
       ),
       body: docs.isEmpty
@@ -323,4 +329,209 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  // ---- Settings menu (3-dots) ----
+
+  void _showSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(
+                  ref.watch(darkModeProvider)
+                      ? Icons.dark_mode
+                      : Icons.light_mode,
+                ),
+                title: const Text('Dark Mode'),
+                trailing: Switch(
+                  value: ref.watch(darkModeProvider),
+                  onChanged: (value) {
+                    ref.read(darkModeProvider.notifier).state = value;
+                  },
+                ),
+                onTap: () {
+                  ref.read(darkModeProvider.notifier).state =
+                      !ref.read(darkModeProvider);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.tips_and_updates_outlined),
+                title: const Text('Tips for better scanning'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showTipsDialog();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('Version Info'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showVersionDialog();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.code),
+                title: const Text('Developer Info'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showDeveloperDialog();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showTipsDialog() async {
+    const tips = <(IconData, String, String)>[
+      (
+        Icons.lightbulb_outline,
+        'Lighting',
+        'Use even, diffuse light. Avoid direct glare on the page.',
+      ),
+      (
+        Icons.crop_square,
+        'Hold steady',
+        'Frame the page fully and hold the device parallel to it.',
+      ),
+      (
+        Icons.contrast,
+        'High contrast',
+        'Black ink on white paper gives the cleanest scans and best B&W.',
+      ),
+      (
+        Icons.palette,
+        'Pick the right mode',
+        'Use Color for photos/colour pages, B&W for text, Grayscale for both.',
+      ),
+      (
+        Icons.cleaning_services_outlined,
+        'Lens check',
+        'Wipe the camera lens before scanning for sharp, clear images.',
+      ),
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tips for better scanning'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (icon, title, body) in tips) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            body,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showVersionDialog() async {
+    PackageInfo? info;
+    try {
+      info = await PackageInfo.fromPlatform();
+    } catch (_) {
+      // Falls back to the values below if platform channel info isn't
+      // available (e.g. certain test/desktop setups).
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Version Info'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('App: ${info?.appName ?? 'Lachit Scanner'}'),
+            const SizedBox(height: 4),
+            Text(
+              'Version: ${info?.version ?? '0.1.0'}'
+              '${info?.buildNumber.isNotEmpty == true ? ' (${info!.buildNumber})' : ''}',
+            ),
+            const SizedBox(height: 4),
+            Text('Package: ${info?.packageName ?? 'com.lachit.scanner'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDeveloperDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Developer Info'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Lachit Scanner'),
+            SizedBox(height: 8),
+            Text(
+              'Free, offline document & book scanner. No accounts, '
+              'no cloud, no watermarks, no third-party tracking.',
+            ),
+            SizedBox(height: 8),
+            Text('Built with Flutter, Riverpod, and OpenCV (opencv_dart).'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 }

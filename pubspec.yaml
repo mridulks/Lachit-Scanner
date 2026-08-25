@@ -32,6 +32,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   gal: ^2.3.3
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

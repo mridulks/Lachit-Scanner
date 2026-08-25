@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/providers.dart';
 import 'core/storage/storage_service.dart';
 import 'features/home/home_screen.dart';
 
@@ -10,14 +11,16 @@ Future<void> main() async {
   runApp(const ProviderScope(child: LachitScannerApp()));
 }
 
-class LachitScannerApp extends StatelessWidget {
+class LachitScannerApp extends ConsumerWidget {
   const LachitScannerApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = ref.watch(darkModeProvider);
     return MaterialApp(
       title: 'Lachit Scanner',
       debugShowCheckedModeBanner: false,
+      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1B5E3A), // deep green — Lachit branding

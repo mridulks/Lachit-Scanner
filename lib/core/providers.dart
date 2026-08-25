@@ -14,3 +14,8 @@ final activeDocumentProvider = StateProvider<ScanDocument?>((ref) => null);
 /// list know to re-read from Hive (Hive objects are mutable, not
 /// immutable state, so we pair them with a simple version counter).
 final documentVersionProvider = StateProvider<int>((ref) => 0);
+
+/// State for whether the app is in dark mode.
+/// Persisted across sessions via Hive when StorageService initialises,
+/// but we keep it simple here with a Provider that defaults to false (light).
+final darkModeProvider = StateProvider<bool>((ref) => false);
