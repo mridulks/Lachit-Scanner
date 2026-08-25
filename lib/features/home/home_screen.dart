@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -9,6 +11,7 @@ import '../../core/scan_kind.dart';
 import '../../models/document.dart';
 import '../../models/page.dart';
 import '../document_editor/document_editor_screen.dart';
+import '../export/export_screen.dart';
 import '../scanner/scanner_screen.dart';
 
 enum _MenuAction {
@@ -17,6 +20,8 @@ enum _MenuAction {
   versionInfo,
   developerInfo,
 }
+
+enum _DocAction { rename, export, delete }
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -66,7 +71,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, BookScanMode.twoPage),
             child: const ListTile(
-              leading: Icon(Icons.menu_book_outlined),
+              leading: Icon(Icons.menu_book_rounded),
               title: Text('Two pages'),
               subtitle: Text('Split an open spread into two pages'),
             ),
@@ -77,6 +82,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mode != null && mounted) {
       await _newScan(ScanKind.book, bookScanMode: mode);
     }
+  }
+
+  Future<void> _renameDocument(ScanDocument doc) async {
+    final storage = ref.read(storageProvider);
+    final controller = TextEditingController(text: doc.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename document'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Document name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newName != null && newName.trim().isNotEmpty && mounted) {
+      await storage.renameDocument(doc, newName.trim());
+      setState(() {});
+    }
+  }
+
+  Future<void> _exportDocument(ScanDocument doc) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ExportScreen(document: doc)),
+    );
   }
 
   Future<void> _deleteDocument(ScanDocument doc) async {
@@ -100,7 +142,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (confirmed == true) {
       await storage.deleteDocument(doc);
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Document deleted')),
+        );
+      }
     }
   }
 
@@ -178,6 +225,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isDarkMode = ref.watch(darkModeProvider);
     final storage = ref.read(storageProvider);
     final docs = storage.listDocuments();
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -202,23 +250,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       }),
               icon: Icon(
                 _selectedDocumentIds.length == docs.length
-                    ? Icons.deselect
-                    : Icons.select_all,
+                    ? Icons.deselect_rounded
+                    : Icons.select_all_rounded,
               ),
-              tooltip: 'Select all',
+              tooltip: _selectedDocumentIds.length == docs.length
+                  ? 'Clear selection'
+                  : 'Select all',
             ),
             IconButton(
               onPressed: _selectedDocumentIds.isEmpty
                   ? null
                   : () => _exportSelected(docs),
-              icon: const Icon(Icons.ios_share),
+              icon: const Icon(Icons.ios_share_rounded),
               tooltip: 'Export selected',
             ),
             IconButton(
               onPressed: _selectedDocumentIds.isEmpty
                   ? null
                   : () => _deleteSelected(docs),
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.delete_outline_rounded),
               tooltip: 'Delete selected',
             ),
             IconButton(
@@ -226,20 +276,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _selectedDocumentIds.clear();
                 _selectionMode = false;
               }),
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.close_rounded),
               tooltip: 'Exit selection',
             ),
           ] else ...[
             if (docs.isNotEmpty)
               IconButton(
                 onPressed: () => setState(() => _selectionMode = true),
-                icon: const Icon(Icons.checklist),
+                icon: const Icon(Icons.checklist_rounded),
                 tooltip: 'Select documents',
               ),
           ],
           // Permanent Popup Menu
           PopupMenuButton<_MenuAction>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert_rounded),
             tooltip: 'More options',
             onSelected: (action) {
               switch (action) {
@@ -263,7 +313,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Row(
                   children: [
                     Icon(
-                      isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                      isDarkMode
+                          ? Icons.dark_mode_rounded
+                          : Icons.light_mode_rounded,
                     ),
                     const SizedBox(width: 12),
                     Text(isDarkMode ? 'Dark Mode (On)' : 'Dark Mode (Off)'),
@@ -275,7 +327,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 value: _MenuAction.tips,
                 child: Row(
                   children: [
-                    Icon(Icons.tips_and_updates_outlined),
+                    Icon(Icons.tips_and_updates_rounded),
                     SizedBox(width: 12),
                     Text('Tips for better scanning'),
                   ],
@@ -285,7 +337,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 value: _MenuAction.versionInfo,
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline),
+                    Icon(Icons.info_outline_rounded),
                     SizedBox(width: 12),
                     Text('Version Info'),
                   ],
@@ -295,7 +347,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 value: _MenuAction.developerInfo,
                 child: Row(
                   children: [
-                    Icon(Icons.code),
+                    Icon(Icons.code_rounded),
                     SizedBox(width: 12),
                     Text('Developer Info'),
                   ],
@@ -309,10 +361,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
-                child: Text(
-                  'No scans yet.\nTap Document or Book below to scan your first one.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.document_scanner_outlined,
+                      size: 56,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No scans yet.\nTap Document or Book below to scan your first one.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                  ],
                 ),
               ),
             )
@@ -326,8 +389,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final isBookDoc = pages.isNotEmpty &&
                     pages.first.sourceMode != PageSourceMode.document;
                 return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  margin: const EdgeInsets.symmetric(vertical: 5),
+                  elevation: 0,
+                  color: scheme.surfaceContainerLow,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  clipBehavior: Clip.antiAlias,
                   child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     onLongPress: () => setState(() {
                       _selectionMode = true;
                       if (!_selectedDocumentIds.add(doc.id)) {
@@ -343,11 +416,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               }
                             }),
                           )
-                        : Icon(
-                            isBookDoc
-                                ? Icons.menu_book_outlined
-                                : Icons.description_outlined,
-                            size: 36,
+                        : _DocumentThumbnail(
+                            page: pages.isNotEmpty ? pages.first : null,
+                            isBookDoc: isBookDoc,
+                            scheme: scheme,
                           ),
                     title: Text(doc.name),
                     subtitle: Text(
@@ -371,9 +443,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           },
                     trailing: _selectionMode
                         ? null
-                        : IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteDocument(doc),
+                        : PopupMenuButton<_DocAction>(
+                            icon: const Icon(Icons.more_vert_rounded),
+                            tooltip: 'Document options',
+                            onSelected: (action) {
+                              switch (action) {
+                                case _DocAction.rename:
+                                  _renameDocument(doc);
+                                  break;
+                                case _DocAction.export:
+                                  _exportDocument(doc);
+                                  break;
+                                case _DocAction.delete:
+                                  _deleteDocument(doc);
+                                  break;
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: _DocAction.rename,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit_outlined, size: 20),
+                                    SizedBox(width: 12),
+                                    Text('Rename'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _DocAction.export,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.ios_share_rounded, size: 20),
+                                    SizedBox(width: 12),
+                                    Text('Export'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuDivider(),
+                              PopupMenuItem(
+                                value: _DocAction.delete,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.delete_outline_rounded,
+                                      size: 20,
+                                      color: Colors.red,
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Delete',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                   ),
                 );
@@ -382,20 +507,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        // crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
           FloatingActionButton.extended(
             heroTag: 'scan_book',
             onPressed: _newBookScan,
-            icon: const Icon(Icons.menu_book_outlined),
+            icon: const Icon(Icons.menu_book_rounded),
             label: const Text('Book'),
           ),
           const SizedBox(width: 16),
           FloatingActionButton.extended(
             heroTag: 'scan_document',
             onPressed: () => _newScan(ScanKind.document),
-            icon: const Icon(Icons.add_a_photo),
+            icon: const Icon(Icons.add_a_photo_rounded),
             label: const Text('Document'),
           ),
         ],
@@ -409,27 +533,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _showTipsDialog() async {
     const tips = <(IconData, String, String)>[
       (
-        Icons.lightbulb_outline,
+        Icons.lightbulb_outline_rounded,
         'Lighting',
         'Use even, diffuse light. Avoid direct glare on the page.',
       ),
       (
-        Icons.crop_square,
+        Icons.crop_square_rounded,
         'Hold steady',
         'Frame the page fully and hold the device parallel to it.',
       ),
       (
-        Icons.contrast,
+        Icons.contrast_rounded,
         'High contrast',
         'Black ink on white paper gives the cleanest scans and best B&W.',
       ),
       (
-        Icons.palette,
+        Icons.palette_rounded,
         'Pick the right mode',
         'Use Color for photos/colour pages, B&W for text, Grayscale for both.',
       ),
       (
-        Icons.cleaning_services_outlined,
+        Icons.cleaning_services_rounded,
         'Lens check',
         'Wipe the camera lens before scanning for sharp, clear images.',
       ),
@@ -545,6 +669,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small rounded thumbnail for a document's list row — shows the first
+/// page's image (with its stored rotation applied) when one exists, and a
+/// tinted document/book icon otherwise. A small circular badge in the
+/// corner distinguishes Book scans from single Document scans at a glance.
+class _DocumentThumbnail extends StatelessWidget {
+  final ScanPage? page;
+  final bool isBookDoc;
+  final ColorScheme scheme;
+
+  const _DocumentThumbnail({
+    required this.page,
+    required this.isBookDoc,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final typeIcon =
+        isBookDoc ? Icons.menu_book_rounded : Icons.description_rounded;
+    final badgeColor =
+        isBookDoc ? scheme.tertiaryContainer : scheme.primaryContainer;
+    final onBadgeColor =
+        isBookDoc ? scheme.onTertiaryContainer : scheme.onPrimaryContainer;
+
+    return SizedBox(
+      width: 48,
+      height: 60,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: page != null
+                ? RotatedBox(
+                    quarterTurns: page!.rotation ~/ 90,
+                    child: Image.file(
+                      File(page!.imagePath),
+                      width: 48,
+                      height: 60,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : Container(
+                    width: 48,
+                    height: 60,
+                    color: badgeColor,
+                    alignment: Alignment.center,
+                    child: Icon(typeIcon, color: onBadgeColor, size: 22),
+                  ),
+          ),
+          if (page != null)
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.surface, width: 2),
+                ),
+                child: Icon(typeIcon, size: 11, color: onBadgeColor),
+              ),
+            ),
         ],
       ),
     );
