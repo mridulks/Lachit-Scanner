@@ -159,10 +159,31 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
     setState(() {});
   }
 
+  /// Rotates [page], then drops into the full-size viewer so the result can
+  /// actually be judged at scale rather than from a small list thumbnail —
+  /// the same "open a view, see the effect" pattern Enhance/Crop already
+  /// use. The viewer itself also has rotate controls, so if one tap isn't
+  /// enough the user can keep adjusting there instead of bouncing back.
   Future<void> _rotate(ScanPage page, {required bool clockwise}) async {
     final storage = ref.read(storageProvider);
     await storage.rotatePage(page, clockwise: clockwise);
+    ref.read(documentVersionProvider.notifier).state++;
+    if (!mounted) return;
     setState(() {});
+
+    final pages = storage.pagesFor(_doc);
+    final index = pages.indexWhere((p) => p.id == page.id);
+    if (index == -1) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PageViewerScreen(
+          page: page,
+          index: index,
+          total: pages.length,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _deletePage(ScanPage page) async {
@@ -207,7 +228,9 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Rebuild when documentVersionProvider changes.
+    // Rebuild when documentVersionProvider changes — including from the
+    // page viewer, which lives on a separate route but bumps this same
+    // provider after a rotate.
     ref.watch(documentVersionProvider);
     final storage = ref.read(storageProvider);
     final doc = _doc;
@@ -364,89 +387,63 @@ class _PageTile extends StatelessWidget {
             ),
             title: Text('Page ${index + 1}'),
             subtitle: Text(_modeLabel(page)),
-            trailing: PopupMenuButton<String>(
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.more_vert),
-              offset: const Offset(0, 48),
-              onSelected: (v) {
-                switch (v) {
-                  case 'rotate_left':
-                    onRotateLeft();
-                    break;
-                  case 'rotate_right':
-                    onRotateRight();
-                    break;
-                  case 'retake':
-                    onRetake();
-                    break;
-                  case 'export':
-                    onExportSingle();
-                    break;
-                  case 'delete':
-                    onDelete();
-                    break;
-                  case 'enhance':
-                    onEnhance();
-                    break;
-                  case 'markup':
-                    onMarkup();
-                    break;
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'rotate_left',
-                  child: Text('Rotate left'),
-                ),
-                PopupMenuItem(
-                  value: 'rotate_right',
-                  child: Text('Rotate right'),
-                ),
-                PopupMenuItem(value: 'retake', child: Text('Retake')),
-                PopupMenuItem(value: 'enhance', child: Text('Enhance')),
-                PopupMenuItem(
-                  value: 'markup',
-                  child: Text('Markup & annotate'),
-                ),
-                PopupMenuItem(
-                  value: 'export',
-                  child: Text('Export this page'),
-                ),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+            trailing: IconButton(
+              onPressed: onExportSingle,
+              icon: const Icon(Icons.ios_share_rounded),
+              tooltip: 'Export this page',
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 72, right: 8, bottom: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            padding: const EdgeInsets.only(left: 64, right: 4, bottom: 4),
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 0,
+              runSpacing: 0,
               children: [
                 IconButton(
+                  onPressed: onRetake,
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  tooltip: 'Retake',
+                ),
+                IconButton(
                   onPressed: onRotateLeft,
-                  icon: const Icon(Icons.rotate_left),
+                  icon: const Icon(Icons.rotate_left_rounded),
                   tooltip: 'Rotate left',
                 ),
                 IconButton(
                   onPressed: onRotateRight,
-                  icon: const Icon(Icons.rotate_right),
+                  icon: const Icon(Icons.rotate_right_rounded),
                   tooltip: 'Rotate right',
                 ),
                 IconButton(
                   onPressed: onEnhance,
-                  icon: const Icon(Icons.tune),
+                  icon: const Icon(Icons.tune_rounded),
                   tooltip: 'Enhance',
                 ),
                 IconButton(
                   onPressed: onCrop,
-                  icon: const Icon(Icons.crop),
+                  icon: const Icon(Icons.crop_rounded),
                   tooltip: 'Crop',
+                ),
+                IconButton(
+                  onPressed: onMarkup,
+                  icon: const Icon(Icons.draw_outlined),
+                  tooltip: 'Markup & annotate',
+                ),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.red,
+                  ),
+                  tooltip: 'Delete',
                 ),
               ],
             ),
           ),
         ],
       ),
-
     );
   }
 
