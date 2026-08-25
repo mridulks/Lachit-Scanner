@@ -379,9 +379,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 );
               },
             ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        // crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
         children: [
           FloatingActionButton.extended(
             heroTag: 'scan_book',
@@ -389,7 +391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: const Icon(Icons.menu_book_outlined),
             label: const Text('Book'),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(width: 16),
           FloatingActionButton.extended(
             heroTag: 'scan_document',
             onPressed: () => _newScan(ScanKind.document),
