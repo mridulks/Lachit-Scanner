@@ -11,6 +11,13 @@ import '../../models/page.dart';
 import '../document_editor/document_editor_screen.dart';
 import '../scanner/scanner_screen.dart';
 
+enum _MenuAction {
+  toggleTheme,
+  tips,
+  versionInfo,
+  developerInfo,
+}
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -22,10 +29,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<String> _selectedDocumentIds = {};
   bool _selectionMode = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _selectionMode = false;
+    _selectedDocumentIds.clear();
+  }
+
   Future<void> _newScan(ScanKind kind, {BookScanMode? bookScanMode}) async {
-    // A fresh scan session starts with no active document; the first
-    // captured page (or page pair, for Book Mode) creates one — see
-    // CornerAdjustScreen._confirm().
     ref.read(activeDocumentProvider.notifier).state = null;
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -35,7 +46,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _newBookScan() async {
@@ -89,7 +100,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (confirmed == true) {
       await storage.deleteDocument(doc);
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 
@@ -120,10 +131,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       )) {
         await storage.deleteDocument(doc);
       }
-      setState(() {
-        _selectedDocumentIds.clear();
-        _selectionMode = false;
-      });
+      if (mounted) {
+        setState(() {
+          _selectedDocumentIds.clear();
+          _selectionMode = false;
+        });
+      }
     }
   }
 
@@ -162,6 +175,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(documentVersionProvider);
+    final isDarkMode = ref.watch(darkModeProvider);
     final storage = ref.read(storageProvider);
     final docs = storage.listDocuments();
 
@@ -191,9 +205,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ? Icons.deselect
                     : Icons.select_all,
               ),
-              tooltip: _selectedDocumentIds.length == docs.length
-                  ? 'Clear selection'
-                  : 'Select all',
+              tooltip: 'Select all',
             ),
             IconButton(
               onPressed: _selectedDocumentIds.isEmpty
@@ -218,17 +230,79 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               tooltip: 'Exit selection',
             ),
           ] else ...[
-            IconButton(
-              onPressed: _showSettingsSheet,
-              icon: const Icon(Icons.more_vert),
-              tooltip: 'More options',
-            ),
-            IconButton(
-              onPressed: () => setState(() => _selectionMode = true),
-              icon: const Icon(Icons.checklist),
-              tooltip: 'Select documents',
-            ),
+            if (docs.isNotEmpty)
+              IconButton(
+                onPressed: () => setState(() => _selectionMode = true),
+                icon: const Icon(Icons.checklist),
+                tooltip: 'Select documents',
+              ),
           ],
+          // Permanent Popup Menu
+          PopupMenuButton<_MenuAction>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More options',
+            onSelected: (action) {
+              switch (action) {
+                case _MenuAction.toggleTheme:
+                  ref.read(darkModeProvider.notifier).state = !isDarkMode;
+                  break;
+                case _MenuAction.tips:
+                  _showTipsDialog();
+                  break;
+                case _MenuAction.versionInfo:
+                  _showVersionDialog();
+                  break;
+                case _MenuAction.developerInfo:
+                  _showDeveloperDialog();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _MenuAction.toggleTheme,
+                child: Row(
+                  children: [
+                    Icon(
+                      isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(isDarkMode ? 'Dark Mode (On)' : 'Dark Mode (Off)'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: _MenuAction.tips,
+                child: Row(
+                  children: [
+                    Icon(Icons.tips_and_updates_outlined),
+                    SizedBox(width: 12),
+                    Text('Tips for better scanning'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _MenuAction.versionInfo,
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline),
+                    SizedBox(width: 12),
+                    Text('Version Info'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _MenuAction.developerInfo,
+                child: Row(
+                  children: [
+                    Icon(Icons.code),
+                    SizedBox(width: 12),
+                    Text('Developer Info'),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: docs.isEmpty
@@ -293,7 +367,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     DocumentEditorScreen(documentId: doc.id),
                               ),
                             );
-                            setState(() {});
+                            if (mounted) setState(() {});
                           },
                     trailing: _selectionMode
                         ? null
@@ -329,68 +403,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  // ---- Settings menu (3-dots) ----
-
-  void _showSettingsSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(
-                  ref.watch(darkModeProvider)
-                      ? Icons.dark_mode
-                      : Icons.light_mode,
-                ),
-                title: const Text('Dark Mode'),
-                trailing: Switch(
-                  value: ref.watch(darkModeProvider),
-                  onChanged: (value) {
-                    ref.read(darkModeProvider.notifier).state = value;
-                  },
-                ),
-                onTap: () {
-                  ref.read(darkModeProvider.notifier).state =
-                      !ref.read(darkModeProvider);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.tips_and_updates_outlined),
-                title: const Text('Tips for better scanning'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showTipsDialog();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('Version Info'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showVersionDialog();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.code),
-                title: const Text('Developer Info'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showDeveloperDialog();
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _showTipsDialog() async {
     const tips = <(IconData, String, String)>[
@@ -434,7 +446,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+                    Icon(icon,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -473,10 +487,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     PackageInfo? info;
     try {
       info = await PackageInfo.fromPlatform();
-    } catch (_) {
-      // Falls back to the values below if platform channel info isn't
-      // available (e.g. certain test/desktop setups).
-    }
+    } catch (_) {}
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -518,11 +529,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Text('Lachit Scanner'),
             SizedBox(height: 8),
             Text(
-              'Free, offline document & book scanner. No accounts, '
-              'no cloud, no watermarks, no third-party tracking.',
+              'Free, Offline Document & Book Scanner. No Accounts, '
+              'No Cloud, No Watermarks, No Third-party tracking.',
             ),
             SizedBox(height: 8),
-            Text('Built with Flutter, Riverpod, and OpenCV (opencv_dart).'),
+            Text(
+              'Concept, Design and Development:, '
+              'Mridul Kumar Sharmah.'),
           ],
         ),
         actions: [
