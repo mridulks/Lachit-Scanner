@@ -185,6 +185,36 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
                   ),
                   const SizedBox(height: 18),
                   SegmentedButton<ColorMode>(
+                    style: ButtonStyle(
+                      side: WidgetStateProperty.resolveWith((states) {
+                        return BorderSide(
+                          color: Theme.of(context).colorScheme.outline,
+                        );
+                      }),
+                      foregroundColor:
+                          WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer;
+                        }
+                        return Theme.of(context).colorScheme.onSurface;
+                      }),
+                      iconColor: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer;
+                        }
+                        return Theme.of(context).colorScheme.onSurface;
+                      }),
+                      textStyle: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return const TextStyle(fontWeight: FontWeight.w600);
+                        }
+                        return const TextStyle(fontWeight: FontWeight.w400);
+                      }),
+                    ),
                     segments: const [
                       ButtonSegment(
                           value: ColorMode.color, label: Text('Color')),

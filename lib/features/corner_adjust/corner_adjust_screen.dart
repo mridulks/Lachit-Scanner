@@ -455,6 +455,29 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SegmentedButton<model.ColorMode>(
+                style: ButtonStyle(
+                  side: WidgetStateProperty.resolveWith((states) {
+                    return const BorderSide(color: Colors.white);
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return Colors.black;
+                    }
+                    return Colors.white;
+                  }),
+                  iconColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return Colors.black;
+                    }
+                    return Colors.white;
+                  }),
+                  textStyle: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return const TextStyle(fontWeight: FontWeight.w600);
+                    }
+                    return const TextStyle(fontWeight: FontWeight.w400);
+                  }),
+                ),
                 segments: const [
                   ButtonSegment(
                     value: model.ColorMode.color,
