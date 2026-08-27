@@ -33,12 +33,24 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Set<String> _selectedDocumentIds = {};
   bool _selectionMode = false;
+  PackageInfo? _packageInfo;
 
   @override
   void initState() {
     super.initState();
     _selectionMode = false;
     _selectedDocumentIds.clear();
+    _loadPackageInfo();
+  }
+
+  Future<void> _loadPackageInfo() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _packageInfo = info);
+    } catch (_) {
+      // Leave _packageInfo null — the menu row falls back to the
+      // pubspec-pinned version below rather than showing nothing.
+    }
   }
 
   Future<void> _newScan(ScanKind kind, {BookScanMode? bookScanMode}) async {
@@ -301,7 +313,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _showTipsDialog();
                   break;
                 case _MenuAction.versionInfo:
-                  _showVersionDialog();
+                  // No-op: this row is enabled: false below (informational
+                  // only), so it's never actually selectable — kept here
+                  // only so the switch stays exhaustive.
                   break;
                 case _MenuAction.developerInfo:
                   _showDeveloperDialog();
@@ -334,13 +348,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: _MenuAction.versionInfo,
+                enabled: false,
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline_rounded),
-                    SizedBox(width: 12),
-                    Text('Version Info'),
+                    const Icon(Icons.info_outline_rounded),
+                    const SizedBox(width: 12),
+                    Text(
+                      // No hardcoded fallback number — package_info_plus
+                      // already reads the version straight from what
+                      // Flutter's build baked in from pubspec.yaml's
+                      // `version:` line, so bumping it there is the only
+                      // place this ever needs to change.
+                      _packageInfo == null
+                          ? 'Version …'
+                          : 'Version ${_packageInfo!.version}'
+                              '${_packageInfo!.buildNumber.isNotEmpty ? ' (${_packageInfo!.buildNumber})' : ''}',
+                    ),
                   ],
                 ),
               ),
@@ -604,40 +629,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showVersionDialog() async {
-    PackageInfo? info;
-    try {
-      info = await PackageInfo.fromPlatform();
-    } catch (_) {}
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Version Info'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('App: ${info?.appName ?? 'Lachit Scanner'}'),
-            const SizedBox(height: 4),
-            Text(
-              'Version: ${info?.version ?? '0.1.0'}'
-              '${info?.buildNumber.isNotEmpty == true ? ' (${info!.buildNumber})' : ''}',
-            ),
-            const SizedBox(height: 4),
-            Text('Package: ${info?.packageName ?? 'com.lachit.scanner'}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
           ),
         ],
       ),
