@@ -86,32 +86,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _renameDocument(ScanDocument doc) async {
     final storage = ref.read(storageProvider);
-    final controller = TextEditingController(text: doc.name);
+    // Rename is triggered from a PopupMenuButton's onSelected, which fires
+    // as soon as Navigator.pop() is called for the menu route — not after
+    // its close animation/element teardown actually finishes. Opening a
+    // new dialog route in that same frame is a known trigger for the
+    // '_dependents.isEmpty' assertion, so give the menu route a beat to
+    // finish unmounting first.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
+    // _RenameDialog owns its own TextEditingController and disposes it in
+    // its own State.dispose() — i.e. exactly when its Element unmounts.
+    // The previous version created the controller here and disposed it
+    // right after showDialog() returned, but that Future resolves the
+    // instant Navigator.pop() runs, before the dialog's own Focus-node
+    // teardown is actually complete — disposing the controller in that
+    // window raced it. Letting the dialog manage its own lifecycle avoids
+    // the race entirely instead of trying to time around it.
     final newName = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename document'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Document name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) => _RenameDialog(initialName: doc.name),
     );
-    controller.dispose();
     if (newName != null && newName.trim().isNotEmpty && mounted) {
       await storage.renameDocument(doc, newName.trim());
-      setState(() {});
+      // documentVersionProvider is already watched at the top of build(),
+      // so bumping it here refreshes the list instead of relying on a
+      // manual setState after the async gap above.
+      ref.read(documentVersionProvider.notifier).state++;
     }
   }
 
@@ -741,6 +742,62 @@ class _DocumentThumbnail extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Rename dialog with its own, self-owned [TextEditingController].
+///
+/// Creating and disposing the controller from inside this widget's own
+/// State lifecycle (initState/dispose) — rather than from the caller,
+/// after awaiting showDialog() — is what actually fixes the
+/// '_dependents.isEmpty' crash: Flutter guarantees a State's dispose()
+/// runs in the correct order relative to its own Element's teardown
+/// (including the TextField's Focus node), so there's no window where
+/// the controller can be disposed while something still depends on it.
+class _RenameDialog extends StatefulWidget {
+  final String initialName;
+
+  const _RenameDialog({required this.initialName});
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename document'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Document name'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
