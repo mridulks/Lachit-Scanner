@@ -1,6 +1,8 @@
-// Export options screen (design doc §6): PDF is the default for a full
-// multi-page document; single-page image/PDF export is also available
-// from the document editor's per-page menu.
+// Export options screen (design doc §6): JPEG images are the default
+// format, with "Best — original resolution" as the default quality preset;
+// PDF export is also available for a full multi-page document. Single-page
+// image/PDF export is additionally available from the document editor's
+// per-page menu.
 
 
 import 'package:flutter/material.dart';
@@ -30,8 +32,8 @@ class ExportScreen extends ConsumerStatefulWidget {
 }
 
 class _ExportScreenState extends ConsumerState<ExportScreen> {
-  ExportFormat _format = ExportFormat.pdf;
-  ExportQuality _quality = ExportQuality.balanced;
+  ExportFormat _format = ExportFormat.images;
+  ExportQuality _quality = ExportQuality.best;
   PdfPageSizing _sizing = PdfPageSizing.matchImage;
   bool _working = false;
 
