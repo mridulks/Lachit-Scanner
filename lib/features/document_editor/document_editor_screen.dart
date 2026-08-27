@@ -387,57 +387,55 @@ class _PageTile extends StatelessWidget {
             ),
             title: Text('Page ${index + 1}'),
             subtitle: Text(_modeLabel(page)),
-            trailing: IconButton(
+            trailing: _ActionIcon(
               onPressed: onExportSingle,
-              icon: const Icon(Icons.ios_share_rounded),
+              icon: Icons.ios_share_rounded,
               tooltip: 'Export this page',
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 64, right: 4, bottom: 4),
+            padding: const EdgeInsets.only(left: 64, right: 4, bottom: 8),
             child: Wrap(
               alignment: WrapAlignment.end,
               crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 0,
-              runSpacing: 0,
+              spacing: 6,
+              runSpacing: 6,
               children: [
-                IconButton(
+                _ActionIcon(
                   onPressed: onRetake,
-                  icon: const Icon(Icons.camera_alt_outlined),
+                  icon: Icons.camera_alt_rounded,
                   tooltip: 'Retake',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onRotateLeft,
-                  icon: const Icon(Icons.rotate_left_rounded),
+                  icon: Icons.rotate_left_rounded,
                   tooltip: 'Rotate left',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onRotateRight,
-                  icon: const Icon(Icons.rotate_right_rounded),
+                  icon: Icons.rotate_right_rounded,
                   tooltip: 'Rotate right',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onEnhance,
-                  icon: const Icon(Icons.tune_rounded),
+                  icon: Icons.tune_rounded,
                   tooltip: 'Enhance',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onCrop,
-                  icon: const Icon(Icons.crop_rounded),
+                  icon: Icons.crop_rounded,
                   tooltip: 'Crop',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onMarkup,
-                  icon: const Icon(Icons.draw_outlined),
+                  icon: Icons.brush_rounded,
                   tooltip: 'Markup & annotate',
                 ),
-                IconButton(
+                _ActionIcon(
                   onPressed: onDelete,
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    color: Colors.red,
-                  ),
+                  icon: Icons.delete_rounded,
                   tooltip: 'Delete',
+                  destructive: true,
                 ),
               ],
             ),
@@ -478,6 +476,44 @@ class _InsertPageButton extends StatelessWidget {
           tooltip: 'Insert page here',
           visualDensity: VisualDensity.compact,
         ),
+      ),
+    );
+  }
+}
+
+/// Compact tonal icon button used for page actions (retake, rotate,
+/// enhance, crop, markup, delete, export). A flat, bare IconButton reads
+/// as thin/dated at this size — a soft tonal circle behind the glyph
+/// (Material 3's "filled tonal" icon button) gives each action visual
+/// weight and is what most current, polished Material apps use for a row
+/// of small equal-priority actions like this one.
+class _ActionIcon extends StatelessWidget {
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String tooltip;
+  final bool destructive;
+
+  const _ActionIcon({
+    required this.onPressed,
+    required this.icon,
+    required this.tooltip,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton.filledTonal(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 19),
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        minimumSize: const Size(38, 38),
+        padding: EdgeInsets.zero,
+        backgroundColor:
+            destructive ? scheme.errorContainer : scheme.secondaryContainer,
+        foregroundColor:
+            destructive ? scheme.onErrorContainer : scheme.onSecondaryContainer,
       ),
     );
   }
