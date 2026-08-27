@@ -19,10 +19,10 @@ class ImageEnhancementScreen extends StatefulWidget {
 class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Uint8List? _bytes;
   ColorMode _colorMode = ColorMode.grayscale;
-  double _brightness = 0;
-  double _contrast = 1;
-  double _shadowRemoval = 0;
-  double _sharpness = 0;
+  double _brightness = 35;
+  double _contrast = 1.3;
+  double _shadowRemoval = 0.35;
+  double _sharpness = 1.0;
   bool _saving = false;
 
   @override
@@ -45,12 +45,18 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
           _contrast = 1;
           _shadowRemoval = 0;
           _sharpness = 0;
+        // case 'Clean':
+        //   _colorMode = ColorMode.grayscale;
+        //   _brightness = 4;
+        //   _contrast = 1.08;
+        //   _shadowRemoval = 0.35;
+        //   _sharpness = 0.2;
         case 'Clean':
           _colorMode = ColorMode.grayscale;
-          _brightness = 4;
-          _contrast = 1.08;
+          _brightness = 35;
+          _contrast = 1.3;
           _shadowRemoval = 0.35;
-          _sharpness = 0.2;
+          _sharpness = 1.0;
         // case 'Text':
         //   _colorMode = ColorMode.bw;
         //   _brightness = 0;
@@ -61,8 +67,8 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
           _colorMode = ColorMode.bw;
           _brightness = 35;
           _contrast = 1.3;
-          _shadowRemoval = 0;
-          _sharpness = 0.5;
+          _shadowRemoval = .4;
+          _sharpness = 1.0;
       }
     });
   }
@@ -183,6 +189,14 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
                         ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tips: Adjust Brightness and Contrast in the sliders for desired result.',
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.black54,
+                    ),
+                  ),
                   const SizedBox(height: 18),
                   SegmentedButton<ColorMode>(
                     style: ButtonStyle(
@@ -225,8 +239,23 @@ class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
                       ButtonSegment(value: ColorMode.bw, label: Text('B&W')),
                     ],
                     selected: {_colorMode},
-                    onSelectionChanged: (value) =>
-                        setState(() => _colorMode = value.first),
+                    onSelectionChanged: (value) {
+                      final mode = value.first;
+                      setState(() {
+                        _colorMode = mode;
+                        if (mode == ColorMode.bw) {
+                          _brightness = 35;
+                          _contrast = 1.3;
+                          _shadowRemoval = 0.4;
+                          _sharpness = 1.0;
+                        } else if (mode == ColorMode.color) {
+                          _brightness = 0;
+                          _contrast = 1;
+                          _shadowRemoval = 0;
+                          _sharpness = 0;
+                        }
+                      });
+                    },
                   ),
                   const SizedBox(height: 14),
                   _slider(
