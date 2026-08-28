@@ -20,6 +20,8 @@
 	<string>APPL</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Lachit Scanner needs the camera to scan documents.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+  	<string>Lachit Scanner saves your scanned pages to your photo library when you choose to.</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
