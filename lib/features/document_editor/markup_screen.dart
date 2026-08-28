@@ -87,8 +87,9 @@ class _MarkupShape {
   final Offset start;
   final Offset end;
   final bool filled;
+  final Color color;
 
-  const _MarkupShape(this.kind, this.start, this.end, this.filled);
+  const _MarkupShape(this.kind, this.start, this.end, this.filled, this.color);
 }
 
 class _MarkupScreenState extends State<MarkupScreen> {
@@ -110,6 +111,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
   Offset? _activeShapeEnd;
   _ShapeKind _shapeKind = _ShapeKind.rectangle;
   bool _shapeFilled = false;
+  Color _shapeColor = Colors.blue;
   bool _saving = false;
   int _draggingSignature = -1;
   int _draggingStamp = -1;
@@ -235,7 +237,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
       final end = _activeShapeEnd;
       if (start != null && end != null && (end - start).distance > 6) {
         setState(() {
-          _shapes.add(_MarkupShape(_shapeKind, start, end, _shapeFilled));
+          _shapes.add(_MarkupShape(_shapeKind, start, end, _shapeFilled, _shapeColor));
           _activeShapeStart = null;
           _activeShapeEnd = null;
         });
@@ -407,34 +409,88 @@ class _MarkupScreenState extends State<MarkupScreen> {
   }
 
   Future<void> _chooseShape() async {
+    // For line/arrow the "filled" flag is meaningless, so the picker only
+    // offers a fill toggle for rectangle/oval.
+    final supportsFill = _kindSupportsFill(_shapeKind);
     final selection = await showModalBottomSheet<(_ShapeKind, bool)>(
       context: context,
+      isScrollControlled: true,
       builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            for (final kind in _ShapeKind.values)
-              ListTile(
-                leading: Icon(_shapeIcon(kind)),
-                title: Text(_shapeName(kind)),
-                trailing: Switch(
-                  value: _shapeFilled,
-                  onChanged: (value) {
-                    Navigator.pop(context, (kind, value));
+        child: SingleChildScrollView(
+          child: Wrap(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+                child: Text(
+                  'Shape',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              for (final kind in _ShapeKind.values)
+                ListTile(
+                  leading: Icon(_shapeIcon(kind)),
+                  title: Text(_shapeName(kind)),
+                  onTap: () {
+                    // Line/arrow are always outline; only rectangle/oval
+                    // honour the user's fill preference.
+                    Navigator.pop(
+                      context,
+                      (kind, _kindSupportsFill(kind) ? _shapeFilled : false),
+                    );
                   },
                 ),
-                onTap: () => Navigator.pop(context, (kind, _shapeFilled)),
-              ),
-          ],
+              if (supportsFill)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    'Style',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (supportsFill)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: false,
+                        label: Text('Outline'),
+                        icon: Icon(Icons.rectangle_outlined),
+                      ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        label: Text('Filled'),
+                        icon: Icon(Icons.rectangle),
+                      ),
+                    ],
+                    selected: {_shapeFilled},
+                    onSelectionChanged: (values) {
+                      if (values.isEmpty) return;
+                      Navigator.pop(context, (_shapeKind, values.first));
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
     if (selection != null && mounted) {
       setState(() {
         _shapeKind = selection.$1;
-        _shapeFilled = selection.$2;
+        _shapeFilled = _kindSupportsFill(selection.$1) ? selection.$2 : false;
       });
     }
   }
+
+  bool _kindSupportsFill(_ShapeKind kind) =>
+      kind == _ShapeKind.rectangle || kind == _ShapeKind.oval;
 
   IconData _shapeIcon(_ShapeKind kind) => switch (kind) {
         _ShapeKind.rectangle => Icons.rectangle_outlined,
@@ -509,6 +565,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
                 _activeShapeStart!,
                 _activeShapeEnd!,
                 _shapeFilled,
+                _shapeColor,
               ),
       ).paint(canvas, canvasSize);
       final picture = recorder.endRecording();
@@ -604,6 +661,7 @@ class _MarkupScreenState extends State<MarkupScreen> {
                                     _activeShapeStart!,
                                     _activeShapeEnd!,
                                     _shapeFilled,
+                                    _shapeColor,
                                   ),
                           ),
                         ),
@@ -646,10 +704,21 @@ class _MarkupScreenState extends State<MarkupScreen> {
                   ),
                 ),
               PopupMenuButton<Color>(
-                tooltip: 'Pen color',
-                enabled: _tool == _MarkupTool.pen,
-                onSelected: (color) => setState(() => _penColor = color),
-                icon: Icon(Icons.palette, color: _penColor),
+                tooltip: _tool == _MarkupTool.shape
+                    ? 'Shape color'
+                    : 'Pen color',
+                enabled: _tool == _MarkupTool.pen || _tool == _MarkupTool.shape,
+                onSelected: (color) => setState(() {
+                  if (_tool == _MarkupTool.pen) {
+                    _penColor = color;
+                  } else {
+                    _shapeColor = color;
+                  }
+                }),
+                icon: Icon(
+                  Icons.palette,
+                  color: _tool == _MarkupTool.shape ? _shapeColor : _penColor,
+                ),
                 itemBuilder: (context) => [
                   for (final color in _penColors)
                     PopupMenuItem<Color>(
@@ -660,7 +729,11 @@ class _MarkupScreenState extends State<MarkupScreen> {
                           const SizedBox(width: 12),
                           Text(_colorName(color)),
                           const Spacer(),
-                          if (_penColor == color) const Icon(Icons.check),
+                          if ((_tool == _MarkupTool.shape
+                                  ? _shapeColor
+                                  : _penColor) ==
+                              color)
+                            const Icon(Icons.check),
                         ],
                       ),
                     ),
@@ -804,7 +877,7 @@ class _MarkupPainter extends CustomPainter {
 
   void _drawShape(Canvas canvas, _MarkupShape shape) {
     final paint = Paint()
-      ..color = Colors.blue
+      ..color = shape.color
       ..strokeWidth = 3
       ..style = shape.filled ? PaintingStyle.fill : PaintingStyle.stroke;
     final rect = Rect.fromPoints(shape.start, shape.end);
@@ -814,9 +887,11 @@ class _MarkupPainter extends CustomPainter {
       case _ShapeKind.oval:
         canvas.drawOval(rect, paint);
       case _ShapeKind.line:
+        // Lines are always outlined, regardless of the `filled` flag.
         paint.style = PaintingStyle.stroke;
         canvas.drawLine(shape.start, shape.end, paint);
       case _ShapeKind.arrow:
+        // Arrows are always outlined, regardless of the `filled` flag.
         paint.style = PaintingStyle.stroke;
         canvas.drawLine(shape.start, shape.end, paint);
         final direction = shape.start - shape.end;
