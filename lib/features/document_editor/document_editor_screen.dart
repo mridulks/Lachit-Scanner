@@ -89,32 +89,44 @@ class _DocumentEditorScreenState extends ConsumerState<DocumentEditorScreen> {
             : ScanKind.document;
     var bookScanMode = BookScanMode.singlePage;
     if (kind == ScanKind.book) {
-      final selectedMode = await showDialog<BookScanMode>(
-        context: context,
-        builder: (context) => SimpleDialog(
-          title: const Text('Add book page'),
-          children: [
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, BookScanMode.singlePage),
-              child: const ListTile(
-                leading: Icon(Icons.article_outlined),
-                title: Text('Single page'),
-                subtitle: Text('No gutter or page split'),
+      // A bookRight page only ever gets created by Two-page (spread) mode
+      // — Single-page mode only ever produces bookLeft pages. So once the
+      // document has one, we already know which mode the user is in and
+      // don't need to ask again on every "+" tap; only the very first
+      // spread (before any bookRight page exists yet) still needs to ask.
+      final alreadyScanningSpreads =
+          pages.any((p) => p.sourceMode == PageSourceMode.bookRight);
+      if (alreadyScanningSpreads) {
+        bookScanMode = BookScanMode.twoPage;
+      } else {
+        final selectedMode = await showDialog<BookScanMode>(
+          context: context,
+          builder: (context) => SimpleDialog(
+            title: const Text('Add book page'),
+            children: [
+              SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(context, BookScanMode.singlePage),
+                child: const ListTile(
+                  leading: Icon(Icons.article_outlined),
+                  title: Text('Single page'),
+                  subtitle: Text('No gutter or page split'),
+                ),
               ),
-            ),
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, BookScanMode.twoPage),
-              child: const ListTile(
-                leading: Icon(Icons.menu_book_outlined),
-                title: Text('Two pages'),
-                subtitle: Text('Scan an open spread'),
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, BookScanMode.twoPage),
+                child: const ListTile(
+                  leading: Icon(Icons.menu_book_outlined),
+                  title: Text('Two pages'),
+                  subtitle: Text('Scan an open spread'),
+                ),
               ),
-            ),
-          ],
-        ),
-      );
-      if (selectedMode == null || !mounted) return;
-      bookScanMode = selectedMode;
+            ],
+          ),
+        );
+        if (selectedMode == null || !mounted) return;
+        bookScanMode = selectedMode;
+      }
     }
 
     final existingIds = storage.pagesFor(doc).map((page) => page.id).toSet();
