@@ -1,10 +1,19 @@
 name: lachit_scanner
 description: "Free, offline, no-watermark document & book scanner."
 publish_to: 'none'
-version: 13.0.0+1
+version: 14.0.0+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/lachitscanner_icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  # adaptive_icon_background: "#1B0000"
+  # adaptive_icon_foreground: "assets/icon/lachitscanner_icon_foreground.png"
 
 dependencies:
   flutter:
@@ -40,6 +49,7 @@ dev_dependencies:
   hive_generator: ^2.0.1
   build_runner: ^2.4.11
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
