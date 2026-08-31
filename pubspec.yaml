@@ -12,9 +12,9 @@ flutter_launcher_icons:
   image_path: "assets/icon/lachitscanner_icon.png"
   min_sdk_android: 21
   remove_alpha_ios: true
-  # adaptive_icon_background: "#1B0000"
-  # adaptive_icon_foreground: "assets/icon/lachitscanner_icon_foreground.png"
-
+  adaptive_icon_background: "#B71C1C"
+  adaptive_icon_foreground: "assets/icon/lachitscanner_icon.png"
+  
 dependencies:
   flutter:
     sdk: flutter
