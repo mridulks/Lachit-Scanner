@@ -384,27 +384,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       body: docs.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.document_scanner_outlined,
-                      size: 56,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No scans yet.\nTap Document or Book below to scan your first one.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  ],
+        ? Stack(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.document_scanner_outlined,
+                        size: 56,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No scans yet.\nTap Document or Book below to scan your first one.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            )
+              Positioned(
+                bottom: 160,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      'Tips: Please use a contrasting background for best result.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                            fontStyle: FontStyle.italic,
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: docs.length,

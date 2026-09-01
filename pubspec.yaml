@@ -1,7 +1,7 @@
 name: lachit_scanner
 description: "Free, offline, no-watermark document & book scanner."
 publish_to: 'none'
-version: 14.0.0+1
+version: 14.0.0+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
