@@ -384,52 +384,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       body: docs.isEmpty
-        ? Stack(
-            children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.document_scanner_outlined,
-                        size: 56,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No scans yet.\nTap Document or Book below to scan your first one.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 160,
-                left: 0,
-                right: 0,
-                child: Center(
+          ? Stack(
+              children: [
+                Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      'Tips: Please use a contrasting background for best result.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color:
-                                scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                            fontStyle: FontStyle.italic,
-                          ),
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.document_scanner_outlined,
+                          size: 56,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No scans yet.\nTap Document or Book below to scan your first one.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ],
-          )
+                Positioned(
+                  bottom: 160,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Text(
+                        'Tips: Please use a contrasting background for best result.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                              fontStyle: FontStyle.italic,
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
           : ListView.builder(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.fromLTRB(
+                12,
+                12,
+                12,
+                88 + MediaQuery.viewPaddingOf(context).bottom,
+              ),
               itemCount: docs.length,
               itemBuilder: (context, index) {
                 final doc = docs[index];
@@ -622,8 +627,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(icon,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.primary),
+                        size: 20, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -674,9 +678,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               'No Cloud, No Watermarks, No Third-party tracking.',
             ),
             SizedBox(height: 8),
-            Text(
-              'Concept, Design and Development:, '
-              'Mridul Kumar Sharmah.'),
+            Text('Concept, Design and Development:, '
+                'Mridul Kumar Sharmah.'),
           ],
         ),
         actions: [

@@ -66,7 +66,7 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   Point<double>? _lastDragImagePoint; // for delta-based edge translation
   int _draggingGutterIndex = -1;
 
-  model.ColorMode _colorMode = model.ColorMode.grayscale;
+  model.ColorMode _colorMode = model.ColorMode.color;
 
   // Screen<->image coordinate mapping, computed on layout.
   double _scale = 1;
@@ -75,11 +75,6 @@ class _CornerAdjustScreenState extends ConsumerState<CornerAdjustScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.scanKind == ScanKind.book) {
-      // Printed book pages retain far more detail in grayscale. B&W remains
-      // available when a deliberately high-contrast scan is wanted.
-      _colorMode = model.ColorMode.grayscale;
-    }
     _load();
   }
 

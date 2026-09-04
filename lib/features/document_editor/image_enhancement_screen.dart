@@ -18,11 +18,11 @@ class ImageEnhancementScreen extends StatefulWidget {
 
 class _ImageEnhancementScreenState extends State<ImageEnhancementScreen> {
   Uint8List? _bytes;
-  ColorMode _colorMode = ColorMode.grayscale;
-  double _brightness = 35;
-  double _contrast = 1.3;
-  double _shadowRemoval = 0.35;
-  double _sharpness = 1.0;
+  ColorMode _colorMode = ColorMode.color;
+  double _brightness = 0;
+  double _contrast = 1;
+  double _shadowRemoval = 0;
+  double _sharpness = 0;
   bool _saving = false;
 
   @override
