@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>lachit_scannerl</string>
+	<string>lachit_scanner</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>NSCameraUsageDescription</key>
@@ -23,7 +23,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Lachit Scanner saves your scanned pages to your photo library when you choose to.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Lachit Scanner needs access to save your scans into a dedicated "Lachit Scanner" album in your photo library.</string>
+	<string>Lachit Scanner needs access to save your scans into a dedicated &quot;Lachit Scanner&quot; album in your photo library.</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
