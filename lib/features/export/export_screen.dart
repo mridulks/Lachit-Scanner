@@ -89,7 +89,14 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       }
 
       if (!mounted) return;
-      await Share.shareXFiles(files, text: widget.document.name);
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        files,
+        text: widget.document.name,
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

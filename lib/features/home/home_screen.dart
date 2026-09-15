@@ -221,7 +221,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       }
       if (files.isNotEmpty && mounted) {
-        await Share.shareXFiles(files, text: 'Selected scans');
+        final box = context.findRenderObject() as RenderBox?;
+        await Share.shareXFiles(
+          files,
+          text: 'Selected scans',
+          sharePositionOrigin: box == null
+              ? null
+              : box.localToGlobal(Offset.zero) & box.size,
+        );
       }
     } catch (e) {
       if (mounted) {
